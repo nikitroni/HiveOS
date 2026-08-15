@@ -4,3 +4,5 @@
 .vscode/
 saves/
 **/logs/
+_paint/
+_test/
