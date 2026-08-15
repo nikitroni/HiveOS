@@ -1,0 +1,34 @@
+Cage placement test started at Thu Feb 19 21:22:01 2026
+Cage chest inventory:
+  Slot 1: productivebees:sturdy_bee_cage x16
+Using cage from slot 1
+
+--- Testing pushItems into hive slots 1-12 ---
+pushItems to slot 1 failed (returned 0)
+pushItems to slot 2 failed (returned 0)
+pushItems to slot 3 failed (returned 0)
+pushItems to slot 4 failed (returned 0)
+pushItems to slot 5 failed (returned 0)
+pushItems to slot 6 failed (returned 0)
+pushItems to slot 7 failed (returned 0)
+pushItems to slot 8 failed (returned 0)
+pushItems to slot 9 failed (returned 0)
+pushItems to slot 10 failed (returned 0)
+pushItems to slot 11 failed (returned 0)
+SUCCESS (pushItems): slot 12 moved 1 cage
+
+--- Testing pullItems from chest into hive slots 1-12 ---
+pullItems to slot 1 failed
+pullItems to slot 2 failed
+Slot 3 is occupied, skipping
+pullItems to slot 4 failed
+pullItems to slot 5 failed
+pullItems to slot 6 failed
+pullItems to slot 7 failed
+pullItems to slot 8 failed
+pullItems to slot 9 failed
+pullItems to slot 10 failed
+pullItems to slot 11 failed
+SUCCESS (pullItems): slot 12 moved 1 cage
+
+Test finished. Check successful slots above.
