@@ -182,25 +182,4 @@ return {
         max = 1,
         group = "labos",
     },
-    {
-        key = "test_chest",
-        label = "TEST",
-        checkMethods = {"list", "getItemDetail", "pushItems"},
-        max = 1,
-        group = "labos",
-    },
-    {
-        key = "test_chest2",
-        label = "TEST2",
-        checkMethods = {"list", "getItemDetail", "pushItems"},
-        max = 1,
-        group = "labos",
-    },
-    {
-        key = "test_chest3",
-        label = "TEST3",
-        checkMethods = {"list", "getItemDetail", "pushItems"},
-        max = 1,
-        group = "labos",
-    },
 }
