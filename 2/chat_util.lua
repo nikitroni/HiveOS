@@ -28,8 +28,35 @@ local PREFIXES = {
     highlight = "** ",
 }
 
--- Prefix that chat_box adds to its own messages (echo)
-local CHATBOX_TAG = "[AP]"
+-- MOTD color codes (project color scheme).
+-- The section sign is built in code as its real UTF-8 two bytes "\194\167" (U+00A7).
+-- This is byte-for-byte identical to the literal "§" used in the working in-game
+-- test script (color_test.lua) — the Chat Box parses MOTD codes only as UTF-8 "§".
+-- A single byte "\167" (0xA7) is NOT valid UTF-8 and shows as an unrecognized
+-- character instead of a color code.
+-- Writing "\194\167" (not a raw "§") keeps the file pure ASCII: an editor saving
+-- it as cp1251 would otherwise produce a lone 0xA7 (the exact bug we avoided).
+local SECTION_SIGN = "\194\167"
+local MOTD = {
+    white = SECTION_SIGN .. "f",      -- plain text
+    green = SECTION_SIGN .. "a",      -- peripherals, blocks, deviceType names
+    red = SECTION_SIGN .. "c",        -- errors, Failed, not added, cancelled
+    darkGreen = SECTION_SIGN .. "2",  -- titles, highlights (chatHighlight)
+    cyan = SECTION_SIGN .. "b",       -- Y/N answers and user questions
+}
+
+--- Build a MOTD color code by its letter (e.g. code("c") -> "§c").
+--- @param letter string one of f,a,c,2,b,...
+--- @return string
+function ChatUtil.code(letter)
+    return SECTION_SIGN .. tostring(letter)
+end
+
+-- Terminal tag displayed in brackets before each message.
+-- Passed as the `prefix` argument of chatBox.sendMessage() so the box shows
+-- "[HeartOS] message". Also matched by isOwnEcho for echo filtering.
+local CHATBOX_TAG = "[HeartOS]"
+local TERMINAL_TAG = "HeartOS"
 
 --- Try to get the player name under which chat_box operates.
 --- HyperBox ChatBox: getName() / getOwner() / getPlayerName()
@@ -101,9 +128,23 @@ function ChatUtil.send(message)
         return false
     end
 
+    -- IMPORTANT: call chatBox.sendMessage(...) as a DIRECT method call, exactly
+    -- like the in-game test:
+    --   chatBox.sendMessage(text, "HeartOS", nil, nil, nil, true)
+    -- The prefix arg ("HeartOS") makes the box display "[HeartOS] ...", and the
+    -- 6th arg (true) enables MOTD color parsing.
+    -- WARNING: do NOT use pcall(chatBox.sendMessage, chatBox, ...) — for the
+    -- Chat Box the detached method + table self breaks the call and the box
+    -- silently drops the message. Always call it as a plain method.
     local success, err = pcall(function()
         if chatBox.sendMessage then
-            chatBox.sendMessage(message)
+            local sendOk, sendErr = pcall(function()
+                chatBox.sendMessage(message, TERMINAL_TAG, nil, nil, nil, true)
+            end)
+            if not sendOk then
+                -- Last-resort fallback: plain 1-arg call (no prefix).
+                chatBox.sendMessage(message)
+            end
         elseif chatBox.send then
             chatBox.send(message)
         elseif chatBox.say then
@@ -127,29 +168,56 @@ function ChatUtil.send(message)
     return success
 end
 
+--- Strip MOTD color codes (§ + 1 char) from a string.
+--- Handles both encodings of the section sign:
+---   UTF-8 "§" (\194\167) as produced by the MOTD table
+---   and single-byte 0xA7 (legacy "\167" form).
+--- @param s string
+--- @return string
+local function stripMOTD(s)
+    if not s then return s end
+    s = s:gsub("\194\167.", "")
+    s = s:gsub("\167.", "")
+    return s
+end
+
 --- Send an info message (white text)
 function ChatUtil.sendInfo(message)
-    return ChatUtil.send(PREFIXES.info .. message)
+    return ChatUtil.send(MOTD.white .. PREFIXES.info .. message)
 end
 
 --- Send a success message (green text)
 function ChatUtil.sendSuccess(message)
-    return ChatUtil.send(PREFIXES.success .. message)
+    return ChatUtil.send(MOTD.green .. PREFIXES.success .. message)
 end
 
 --- Send an error message (red text)
 function ChatUtil.sendError(message)
-    return ChatUtil.send(PREFIXES.error .. message)
+    return ChatUtil.send(MOTD.red .. PREFIXES.error .. message)
 end
 
---- Send a step instruction message (highlighted text)
+--- Send a step instruction message (cyan text — user prompt)
 function ChatUtil.sendStep(message)
-    return ChatUtil.send(PREFIXES.step .. message)
+    return ChatUtil.send(MOTD.cyan .. PREFIXES.step .. message)
 end
 
---- Send a highlighted message (bold marker)
+--- Send a highlighted message (dark green — titles/highlights)
 function ChatUtil.sendHighlight(message)
-    return ChatUtil.send(PREFIXES.highlight .. message)
+    return ChatUtil.send(MOTD.darkGreen .. PREFIXES.highlight .. message)
+end
+
+--- Send a question/prompt to the user (cyan text)
+function ChatUtil.sendQuestion(message)
+    return ChatUtil.send(MOTD.cyan .. message)
+end
+
+--- Wrap a device/peripheral/block name in green (§a).
+--- After the name the color resets to `resetColor` (default: white).
+--- @param name string
+--- @param resetColor string|nil MOTD code to restore after the name
+--- @return string
+function ChatUtil.device(name, resetColor)
+    return MOTD.green .. tostring(name) .. (resetColor or MOTD.white)
 end
 
 --- Send a separator (empty line with dashes)
@@ -175,35 +243,38 @@ local function isOwnEcho(message, player)
         return true
     end
 
-    -- Normalize message: remove [AP] prefix if present
+    -- Normalize message: strip leading bracket tag (e.g. "[HeartOS]" or "[AP]").
     local normalized = message
-    if normalized:sub(1, #CHATBOX_TAG) == CHATBOX_TAG then
-        normalized = normalized:sub(#CHATBOX_TAG + 2)  -- +2 for space after tag
-    end
+    normalized = normalized:gsub("^%[[^%]]+%]%s*", "")
     normalized = normalized:match("^%s*(.-)%s*$")  -- trim
+    -- Also drop the terminal tag token when the box shows "[AP] HeartOS ...".
+    local tagLower = TERMINAL_TAG:lower()
+    if normalized:lower():sub(1, #tagLower) == tagLower then
+        normalized = normalized:sub(#tagLower + 1)
+        normalized = normalized:match("^%s*(.-)%s*$")
+    end
+
+    -- Plain text without MOTD color codes (echo may keep or strip them)
+    local plain = stripMOTD(normalized)
 
     -- If message exactly matches our last sent message — it's echo
-    if lastSentMessage and (message == lastSentMessage or normalized == lastSentMessage) then
+    if lastSentMessage and (stripMOTD(message) == stripMOTD(lastSentMessage) or plain == stripMOTD(lastSentMessage)) then
         return true
     end
 
     -- If message starts with one of our prefixes — it's echo
     for _, prefix in ipairs({PREFIXES.info, PREFIXES.success, PREFIXES.error, PREFIXES.step, PREFIXES.highlight}) do
-        if normalized:sub(1, #prefix) == prefix then
-            return true
-        end
-        -- Also check with [AP] prefix
-        if message:sub(1, #CHATBOX_TAG + #prefix + 1) == CHATBOX_TAG .. " " .. prefix then
+        if plain:sub(1, #prefix) == prefix then
             return true
         end
     end
     -- Separately: separator line of dashes.
     -- NOTE: after stripping [AP] prefix, the remaining dashes may be short.
     -- Any string consisting ONLY of dashes is considered echo.
-    if message:match("^-+$") and #message >= 3 then
+    if stripMOTD(message):match("^-+$") and #message >= 3 then
         return true
     end
-    if normalized:match("^-+$") and #normalized >= 3 then
+    if plain:match("^-+$") and #plain >= 3 then
         return true
     end
 

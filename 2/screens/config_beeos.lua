@@ -1,8 +1,7 @@
 -- config_beeos.lua
--- BeeOS configuration screen: Create / Edit / View / HiveMap
--- All scanning logic is in config_wizard.lua (chat interface)
--- Hive map scanning has its own dedicated screen: hive_map.lua
--- Monitor only shows menu and summary
+-- BeeOS configuration screen: Create / Edit / View.
+-- All scanning logic is in config_wizard.lua (chat interface).
+-- Hive map has its own dedicated screen and button on the main menu.
 
 local MonitorUtil = require("screens/monitor_util")
 local ConfigManager = require("config_manager")
@@ -15,13 +14,11 @@ local ConfigBeeOS = {}
 local COLORS = MonitorUtil.COLORS
 
 local CONFIG_FILE = "beeos_config.lua"
-local HIVES_FILE = "hives_map.lua"
 
 --- Send config to BeeOS via rednet
 local function trySendConfig(mon, heartConfig, startY)
     local targetId = heartConfig.beeos_id or 1
     local config, _ = ConfigManager.loadFromFile(CONFIG_FILE)
-    local hives, _ = ConfigManager.loadFromFile(HIVES_FILE)
 
     if not config then
         MonitorUtil.drawText(mon, 2, startY, "No config to send!", COLORS.error)
@@ -35,15 +32,6 @@ local function trySendConfig(mon, heartConfig, startY)
     else
         ChatUtil.sendError("Send failed: " .. msg)
         MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
-    end
-
-    if hives then
-        local ok2, msg2 = ConfigManager.sendInitialConfig(targetId, { command = "hives_map", data = hives })
-        if ok2 then
-            ChatUtil.sendSuccess("Hives map sent!")
-        else
-            ChatUtil.sendError("Hives map send: " .. msg2)
-        end
     end
 end
 
@@ -156,12 +144,6 @@ local function createBeeOSConfig(mon, heartConfig)
     end
 end
 
---- Hive map: scan hives separately
-local function hiveMapBeeOSConfig(mon, heartConfig)
-    local HiveMap = require("screens/hive_map")
-    HiveMap.run(mon, heartConfig)
-end
-
 -- ==================== MAIN ENTRY ====================
 
 function ConfigBeeOS.run(mon, heartConfig)
@@ -179,12 +161,11 @@ function ConfigBeeOS.run(mon, heartConfig)
             { title = "Create", desc = "Start a new device\nconfiguration.\nAll current settings\nwill be overwritten.", action = "create", color = colors.green },
             { title = "Edit", desc = "Modify existing device\nsettings.\nYou can change or\nremove devices.", action = "edit", color = colors.orange },
             { title = "View", desc = "Display the current\ndevice configuration\nfor review.", action = "view", color = colors.blue },
-            { title = "Hive Map", desc = "Scan and configure\nhive block readers\nfor BeeOS.", action = "hivemap", color = colors.purple },
         }
 
         local colWidth = 16
         local gap = 2
-        local totalWidth = colWidth * 4 + gap * 3
+        local totalWidth = colWidth * 3 + gap * 2
         local startX = math.floor((w - totalWidth) / 2) + 1
         if startX < 1 then startX = 1 end
         local colY = 5
@@ -219,8 +200,6 @@ function ConfigBeeOS.run(mon, heartConfig)
                     editBeeOSConfig(mon, heartConfig)
                 elseif pressed.action == "view" then
                     viewBeeOSConfig(mon, heartConfig)
-                elseif pressed.action == "hivemap" then
-                    hiveMapBeeOSConfig(mon, heartConfig)
                 elseif pressed.action == "back" then
                     return
                 end

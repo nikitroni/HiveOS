@@ -43,7 +43,7 @@ function MainMenu.show(mon, heartConfig)
         local buttons = {
             MonitorUtil.createButton(btnX, btnY, btnWidth, " Configure BeeOS  ", "beeos", colors.blue),
             MonitorUtil.createButton(btnX, btnY + 3, btnWidth, " Configure LabOS  ", "labos", colors.blue),
-            MonitorUtil.createButton(btnX, btnY + 6, btnWidth, " Hive Map  ", "hivemap", colors.purple),
+            MonitorUtil.createButton(btnX, btnY + 6, btnWidth, " Configure Hive  ", "hivemap", colors.purple),
         }
 
         -- Рисуем кнопки
@@ -66,8 +66,8 @@ function MainMenu.show(mon, heartConfig)
                     local ConfigLabOS = require("screens/config_labos")
                     ConfigLabOS.run(mon, heartConfig)
                 elseif pressed.action == "hivemap" then
-                    local HiveMap = require("screens/hive_map")
-                    HiveMap.run(mon, heartConfig)
+                    local HiveMenu = require("screens/hive_menu")
+                    HiveMenu.run(mon, heartConfig)
                 end
             end
         end

@@ -182,4 +182,29 @@ return {
         max = 1,
         group = "labos",
     },
+
+    -- ==================== HIVES (HeartOS) ====================
+    -- Для каждого улья сканируются и добавляются 3 блока:
+    -- сам улей (hive_block), ридер (reader_block) и реле (relay_block).
+    {
+        key = "hive_block",
+        label = "Hive Block",
+        checkMethods = {"list", "getItemDetail", "pushItems", "pullItems"},
+        max = nil,
+        group = "hives",
+    },
+    {
+        key = "reader_block",
+        label = "Hive Reader",
+        checkMethods = {"getBlockData"},
+        max = nil,
+        group = "hives",
+    },
+    {
+        key = "relay_block",
+        label = "Redstone Relay",
+        checkMethods = {"setBundledOutput", "setAnalogOutput"},
+        max = nil,
+        group = "hives",
+    },
 }

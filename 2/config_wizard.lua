@@ -78,7 +78,18 @@ local function chatSuccess(msg) ChatUtil.sendSuccess(msg) end
 local function chatError(msg) ChatUtil.sendError(msg) end
 local function chatStep(msg) ChatUtil.sendStep(msg) end
 local function chatHighlight(msg) ChatUtil.sendHighlight(msg) end
+local function chatQuestion(msg) ChatUtil.sendQuestion(msg) end
 local function chatSeparator() ChatUtil.sendSeparator() end
+
+--- Build a comma-joined list of device/peripheral names, each colored green.
+local function deviceList(list, sep)
+  local parts = {}
+  local s = sep or ", "
+  for _, n in ipairs(list) do
+    table.insert(parts, ChatUtil.device(n))
+  end
+  return table.concat(parts, s)
+end
 
 -- ==================== SCAN A SINGLE DEVICE TYPE ====================
 
@@ -97,7 +108,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
     local checkMethods = deviceType.checkMethods
 
     chatSeparator()
-    chatHighlight("=== " .. label .. " ===")
+    chatHighlight("=== " .. ChatUtil.device(label) .. " ===")
     chatInfo("Required: " .. (maxCount == 999 and "unlimited" or tostring(maxCount)))
 
     local adding = true
@@ -108,7 +119,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
 
         while not deviceFound and not skipRequestedThisType do
             chatSeparator()
-            chatStep("Connect device [" .. label .. "] (new/reconnect/skip)")
+            chatStep("Connect device [" .. ChatUtil.device(label) .. "] (new/reconnect/skip)")
 
             local prevList = getPeripheralList()
 
@@ -135,7 +146,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
                             deviceFound = true
                             scanning = false
                         else
-                            chatError("Detected: " .. name .. " (does not match required methods)")
+                            chatError("Detected: " .. ChatUtil.device(name, ChatUtil.code("c")) .. " (does not match required methods)")
                             if not isInGlobalList(name, globalAllDevices) then
                                 table.insert(globalAllDevices, name)
                             end
@@ -157,9 +168,9 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
                         end
                     elseif #added > 0 or #removed > 0 then
                         if not deviceFound then
-                            local detail = "multiple changes detected"
-                            if #added > 0 then detail = detail .. ", added: " .. table.concat(added, ",") end
-                            if #removed > 0 then detail = detail .. ", removed: " .. table.concat(removed, ",") end
+                            local detail = "Multiple changes detected"
+                            if #added > 0 then detail = detail .. ", added: " .. deviceList(added) end
+                            if #removed > 0 then detail = detail .. ", removed: " .. deviceList(removed) end
                             chatInfo(detail)
                             chatInfo("Work with one device at a time.")
                             for _, name in ipairs(added) do
@@ -181,7 +192,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
                     if msg ~= "" then
                         local isEcho = (event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player))
                         if not isEcho and string.lower(msg) == "skip" then
-                            chatHighlight("Skipping device type: " .. label)
+                            chatHighlight("Skipping device type: " .. ChatUtil.device(label))
                             skipRequestedThisType = true
                             scanning = false
                         end
@@ -189,13 +200,13 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
                 end
             end
 
-            if not deviceFound and not skipRequestedThisType then
-                chatError("Timeout! Device [" .. label .. "] not detected.")
-                chatInfo("Check connection and try again, or type 'skip'.")
+if not deviceFound and not skipRequestedThisType then
+                    chatError("Timeout! Device [" .. ChatUtil.device(label, ChatUtil.code("c")) .. "] not detected.")
+                    chatInfo("Check connection and try again, or type 'skip'.")
 
                 local skipNow = ChatUtil.waitForAnyMessage(10)
                 if skipNow and string.lower(skipNow) == "skip" then
-                    chatHighlight("Skipping device type: " .. label)
+                    chatHighlight("Skipping device type: " .. ChatUtil.device(label))
                     skipRequestedThisType = true
                 end
             end
@@ -221,14 +232,14 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
             end
 
             if alreadyAdded then
-                chatError("Device " .. name .. " already added to this section!")
+                chatError("Device " .. ChatUtil.device(name, ChatUtil.code("c")) .. " already added to this section!")
                 chatInfo("Connect a different device.")
                 deviceFound = false
             else
                 chatSeparator()
-                chatSuccess("Device detected: " .. name)
-                chatInfo("Found device matches type [" .. label .. "]")
-                chatInfo("Add it to config? (Y/N)")
+                chatSuccess("Device detected: " .. ChatUtil.device(name))
+                chatInfo("Found device matches type [" .. ChatUtil.device(label) .. "]")
+                chatQuestion("Add it to config? (Y/N)")
 
                 local confirmed = ChatUtil.waitForYesNo(120)
 
@@ -237,12 +248,12 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
                 elseif confirmed then
                     -- Переместить уже добавленные найденные первыми?
                     table.insert(foundDevices, name)
-                    chatSuccess("Added: " .. name .. " -> " .. label)
+                    chatSuccess("Added: " .. ChatUtil.device(name) .. " -> " .. ChatUtil.device(label))
 
                     if #foundDevices >= maxCount then
                         adding = false
                     else
-                        chatInfo("Add another [" .. label .. "]? (Y/N)")
+                        chatQuestion("Add another [" .. ChatUtil.device(label, ChatUtil.code("b")) .. "]? (Y/N)")
                         local addMore = ChatUtil.waitForYesNo(120)
 
                         if addMore == nil then
@@ -648,7 +659,7 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
     -- Send prompt to chat
     if promptText and promptText ~= "" then
         chatSeparator()
-        chatInfo(promptText)
+        chatQuestion(promptText)
     end
 
     while true do
@@ -819,13 +830,18 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
             for _, dt in ipairs(deviceTypes) do
                 local val = existingConfig[dt.key]
                 local display = type(val) == "table" and table.concat(val, ", ") or tostring(val)
-                chatInfo("  [" .. dt.key .. "] " .. dt.label .. " -> " .. display)
+                if display == "" then
+                    display = ChatUtil.code("8") .. "<none>"
+                else
+                    display = ChatUtil.device(display)
+                end
+                chatInfo("  [" .. ChatUtil.device(dt.key) .. "] " .. ChatUtil.device(dt.label) .. " -> " .. display)
             end
             fullListShown = true
         end
 
         chatSeparator()
-        chatInfo("Enter device key to edit (e.g. 'tech_monitor'), or 'done' to finish:")
+        chatQuestion("Enter device key to edit (e.g. 'tech_monitor'), or 'done' to finish:")
 
         local pageResult, capturedMsg = ConfigWizard.editPageLoop(mon, monSide, "=== " .. configLabel .. " Current ===", currentItems)
 
@@ -854,7 +870,7 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
         end
 
         if not isValid then
-            chatError("Invalid key: '" .. chosenKey .. "'. Valid keys: " .. table.concat(validKeys, ", "))
+            chatError("Invalid key: '" .. ChatUtil.device(chosenKey, ChatUtil.code("c")) .. "'. Valid keys: " .. deviceList(validKeys, ", "))
             os.sleep(1)
         else
             if chosenKey == "done" then
@@ -871,10 +887,10 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
             end
 
             if not chosenType then
-                chatError("Internal error: key " .. chosenKey .. " not found.")
+                chatError("Internal error: key " .. ChatUtil.device(chosenKey, ChatUtil.code("c")) .. " not found.")
                 os.sleep(1)
             else
-                chatSuccess("Editing section: " .. chosenType.label)
+                chatSuccess("Editing section: " .. ChatUtil.device(chosenType.label))
                 local found = ConfigWizard.scanDeviceType(chosenType, globalAllDevices)
                 if #found > 0 then
                     if chosenType.max == 1 then
@@ -882,9 +898,9 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
                     else
                         updatedConfig[chosenType.key] = found
                     end
-                    chatSuccess("Section updated: " .. chosenType.label)
+                    chatSuccess("Section updated: " .. ChatUtil.device(chosenType.label))
                 else
-                    chatError("No devices found for " .. chosenType.label .. ". Keeping old value.")
+                    chatError("No devices found for " .. ChatUtil.device(chosenType.label, ChatUtil.code("c")) .. ". Keeping old value.")
                 end
 
                 -- Show updated list and wait for Y/N while allowing nav
@@ -933,7 +949,7 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     chatSeparator()
     chatHighlight("=== " .. configLabel .. " edit complete ===")
     chatInfo("Check the summary on the monitor.")
-    chatInfo("Save changes? (Y/N)")
+    chatQuestion("Save changes? (Y/N)")
 
     local confirmed = ConfigWizard.waitYesNoNav(
         mon, monSide,

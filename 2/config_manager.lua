@@ -131,19 +131,38 @@ function ConfigManager.createConfig(devices)
     return config
 end
 
---- Создать карту ульев
---- @param hives table array of { reader, hive }
---- @return table array of { id, reader, hive }
+--- Создать карту ульев из результата hive_wizard.
+--- Каждая запись — один улей с 3 перифериями:
+---   hive   = периферия самого улья (beehive/cage, методы инвентаря)
+---   reader = блок-ридер (getBlockData)
+---   relay  = редстоун-реле (setBundledOutput / setAnalogOutput)
+--- @param hives table array of { hive, reader, relay }
+--- @return table array of { id, hive, reader, relay }
 function ConfigManager.createHivesMap(hives)
     local map = {}
     for i, hive in ipairs(hives) do
         table.insert(map, {
             id = i,
-            reader = hive.reader,
             hive = hive.hive,
+            reader = hive.reader,
+            relay = hive.relay,
         })
     end
     return map
+end
+
+--- Найти запись улья по id (для других скриптов)
+--- @param map table карта из createHivesMap
+--- @param id number id улья
+--- @return table|nil { id, hive, reader, relay }
+function ConfigManager.findHiveById(map, id)
+    if type(map) ~= "table" then return nil end
+    for _, hive in ipairs(map) do
+        if hive.id == id then
+            return hive
+        end
+    end
+    return nil
 end
 
 -- ==================== SAVE WITH BACKUP ====================

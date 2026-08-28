@@ -1,0 +1,22 @@
+return {
+  peripherals = {
+    lab_chest = "minecraft:barrel_1",
+    resource_chest = "ae2:interface_0",
+    reader_indexer = "block_reader_20",
+    bee_out = "monitor_7",
+    reader_bee = "block_reader_19",
+    bee_produce = "monitor_9",
+    crafter_4 = "enderio:crafter_7",
+    breeding_chamber = "productivebees:breeding_chamber_2",
+    main_monitor = "monitor_3",
+    incubator = "productivebees:incubator_3",
+    relay_incubator = "redstone_relay_1",
+    cage_chest = "minecraft:barrel_2",
+    gene_upgrade = "monitor_8",
+    crafter_3 = "enderio:crafter_6",
+    refresh = "monitor_10",
+    crafter_1 = "enderio:crafter_4",
+    gene_indexer = "productivebees:gene_indexer_2",
+    crafter_2 = "enderio:crafter_5",
+  },
+}
