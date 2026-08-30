@@ -183,28 +183,21 @@ local function parseHiveId(input)
   return nil
 end
 
---- Draw the full hives map onto the monitor before saving.
---- @param mon table monitor
+--- Build paginated-view items from a hive map for monitor display
+--- (working-area layout, Prev/Next/Back navigation, colored per hive).
 --- @param map table array of { id, hive, reader, relay }
-local function showSummary(mon, map)
-  local w, h = mon.getSize()
-  local area = HudUtil.getArea(mon)
-  local listX, listY, listBg = area.x, area.y, area.bgColor
-  MonitorUtil.clearScreen(mon)
-  HudUtil.drawBackground(mon, "create_edit")
-  HudUtil.createEditTitle(mon, "=== Hive Map Summary ===")
-  local y = listY
-  for _, hive in ipairs(map) do
-    if y > h - 3 then
-      MonitorUtil.drawText(mon, listX, y, "(List continued in chat)", COLORS.darkGray, listBg)
-      break
-    end
-    MonitorUtil.drawText(mon, listX, y, hiveIdStr(hive.id), COLORS.highlight, listBg)
-    MonitorUtil.drawText(mon, listX, y + 1, "hive:   " .. tostring(hive.hive), COLORS.text, listBg)
-    MonitorUtil.drawText(mon, listX, y + 2, "reader: " .. tostring(hive.reader), COLORS.text, listBg)
-    MonitorUtil.drawText(mon, listX, y + 3, "relay:  " .. tostring(hive.relay), COLORS.text, listBg)
-    y = y + 4
+--- @return table items { {key=, value=, color=}, ... }
+local function mapToItems(map)
+  local items = {}
+  local itemColors = { colors.orange, colors.green, colors.blue, colors.purple, colors.magenta, colors.red }
+  for i, hive in ipairs(map) do
+    table.insert(items, {
+      key = hiveIdStr(hive.id),
+      value = "hive=" .. tostring(hive.hive) .. "\n......reader=" .. tostring(hive.reader) .. "\n......relay=" .. tostring(hive.relay),
+      color = itemColors[((i - 1) % #itemColors) + 1],
+    })
   end
+  return items
 end
 
 --- Print the hives map summary into chat.
@@ -229,9 +222,9 @@ local function collectHive(globalAllDevices, committed, idLabel)
     return nil
   end
   chatSuccess("Blocks collected for " .. idLabel .. ":")
-  chatInfo("  hive:   " .. ChatUtil.device(record.hive))
-  chatInfo("  reader: " .. ChatUtil.device(record.reader))
-  chatInfo("  relay:  " .. ChatUtil.device(record.relay))
+  chatInfo(" hive:     " .. ChatUtil.device(record.hive))
+  chatInfo(" reader: " .. ChatUtil.device(record.reader))
+  chatInfo(" relay:   " .. ChatUtil.device(record.relay))
   chatQuestion("Accept these blocks? (Y/N)")
   if ChatUtil.waitForYesNo(120) == true then
     for _, slot in ipairs(HIVE_SLOTS) do
@@ -255,7 +248,7 @@ local function exitInfo(mon, text, color)
   local listX, listY, listBg = area.x, area.y, area.bgColor
   MonitorUtil.clearScreen(mon)
   HudUtil.drawBackground(mon, "create_edit")
-  HudUtil.createEditTitle(mon, "=== Hive Map Wizard ===")
+  HudUtil.createEditTitle(mon, "===   Hive Map Wizard  ===")
   MonitorUtil.drawText(mon, listX, listY, text, color, listBg)
   os.sleep(2)
 end
@@ -335,13 +328,19 @@ function HiveWizard.create(mon, heartConfig)
   else
     -- Build the map and show a full summary on the monitor before saving.
     local map = ConfigManager.createHivesMap(hives)
-    showSummary(mon, map)
 
     chatSeparator()
     chatHighlight("=== Hives Map Summary ===")
     chatSummary(map)
-    chatQuestion("Save this map and send to BeeOS? (Y/N)")
-    local confirm = ChatUtil.waitForYesNo(120)
+
+    -- Interactive summary: working-area layout with Prev/Next/Back buttons,
+    -- waits for Y/N in chat (Back/cancel or timeout = decline).
+    local confirm = ConfigWizard.waitYesNoNav(
+        mon, heartConfig.main_monitor,
+        "=== Hives Map Summary ===",
+        mapToItems(map),
+        "Save this map and send to BeeOS? (Y/N)", 120
+    )
     if confirm == true then
       saveAndSend(map, mon, heartConfig)
     else
@@ -361,14 +360,12 @@ function HiveWizard.edit(mon, heartConfig)
     ChatUtil.init(nil)
   end
 
-local w, h = mon.getSize()
   local area = HudUtil.getArea(mon)
   local listX, listY, listBg = area.x, area.y, area.bgColor
   MonitorUtil.clearScreen(mon)
   HudUtil.drawBackground(mon, "create_edit")
   HudUtil.createEditTitle(mon, "=== Hive Map Wizard: Edit ===")
-  MonitorUtil.drawText(mon, listX, listY, "Follow instructions in CHAT.", COLORS.highlight, listBg)
-  os.sleep(3)
+  MonitorUtil.drawText(mon, listX, listY, "Loading current config...", COLORS.highlight, listBg)
 
   local map, err = ConfigManager.loadFromFile(HIVES_FILE)
   if not map or type(map) ~= "table" or #map == 0 then
@@ -394,14 +391,29 @@ local w, h = mon.getSize()
   local changed = 0
 
   while true do
+    -- Show the current hives map on the monitor (working-area layout with
+    -- Prev/Next/Back buttons) and wait for the player to type a hive id in
+    -- chat, press Back, or hit the timeout.
     chatSeparator()
     chatQuestion("Enter a hive id (id01..id99) or 'done':")
-    local input = ChatUtil.waitForAnyMessage(180)
-    if input == nil then
+    local pageResult, capturedMsg = ConfigWizard.editPageLoop(
+        mon, heartConfig.main_monitor,
+        "===   Hive Map Edit  ===",
+        mapToItems(map),
+        nil,   -- linesPerPage -> working area height
+        180    -- timeout for typing an id in chat
+    )
+
+    if pageResult == "back" then
+      chatInfo("Edit cancelled by user.")
+      exitInfo(mon, "Edit cancelled.", COLORS.error)
+      return
+    elseif pageResult == "timeout" then
       chatInfo("No input. Finishing edit.")
       break
     end
 
+    local input = capturedMsg or ""
     local token = tostring(input):gsub("%s+", ""):lower()
     if token == "done" or token == "end" or token == "stop" or token == "finish" then
       break
@@ -441,13 +453,16 @@ local w, h = mon.getSize()
     return
   end
 
-  -- Show the updated map before saving.
-  showSummary(mon, map)
+  -- Show the updated map on the monitor with Prev/Next/Back and wait for Y/N.
   chatSeparator()
   chatHighlight("=== Updated Hives Map Summary ===")
   chatSummary(map)
-  chatQuestion("Save and send to BeeOS? (Y/N)")
-  local confirm = ChatUtil.waitForYesNo(120)
+  local confirm = ConfigWizard.waitYesNoNav(
+      mon, heartConfig.main_monitor,
+      "=== Updated Hives Map ===",
+      mapToItems(map),
+      "Save and send to BeeOS? (Y/N)", 120
+  )
   if confirm == true then
     saveAndSend(map, mon, heartConfig)
   else

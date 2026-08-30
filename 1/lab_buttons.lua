@@ -9,7 +9,7 @@ local monitors = {
     bee_out = peripheral.wrap(config.peripherals.button_monitors.bee_out),
     gene_upgrade = peripheral.wrap(config.peripherals.button_monitors.gene_upgrade),
     bee_produce = peripheral.wrap(config.peripherals.button_monitors.bee_produce),
-    refresh = peripheral.wrap(config.peripherals.button_monitors.refresh),
+    breed = peripheral.wrap(config.peripherals.button_monitors.breed),
 }
 
 for name, mon in pairs(monitors) do
@@ -188,7 +188,7 @@ function Buttons.drawAll(frame)
     drawBeeOutButton(monitors.bee_out, frame)
     drawGeneUpgradeButton(monitors.gene_upgrade, frame)
     drawBeeProduceButton(monitors.bee_produce, frame)
-    drawBreedButton(monitors.refresh, frame)
+    drawBreedButton(monitors.breed, frame)
 end
 
 local callbacks = {}
@@ -213,8 +213,8 @@ function Buttons.handleTouch(side, x, y)
         callbacks.onGeneUpgrade()
     elseif monName == "bee_produce" and callbacks.onBeeProduce then
         callbacks.onBeeProduce()
-    elseif monName == "refresh" and callbacks.onRefresh then
-        callbacks.onRefresh()
+    elseif monName == "breed" and callbacks.onBreed then
+        callbacks.onBreed()
     end
 end
 

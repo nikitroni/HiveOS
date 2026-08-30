@@ -120,7 +120,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
 
         while not deviceFound and not skipRequestedThisType do
             chatSeparator()
-            chatStep("Connect device [" .. ChatUtil.device(label) .. "] (new/reconnect/skip)")
+            chatStep("Connect device " .. ChatUtil.device(label) .. " (new/reconnect/skip)")
 
             local prevList = getPeripheralList()
 
@@ -188,8 +188,13 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
                     end
 
                 elseif event == "chat_signed" or event == "chat" then
-                    local msg = rawEvent[3] or ""
-                    local player = rawEvent[2]
+                    local player, rawMsg
+                    if event == "chat_signed" then
+                        player, rawMsg = rawEvent[2], rawEvent[3]
+                    else
+                        player, rawMsg = ChatUtil.extractChat(rawEvent)
+                    end
+                    local msg = rawMsg or ""
                     if msg ~= "" then
                         local isEcho = (event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player))
                         if not isEcho and string.lower(msg) == "skip" then
@@ -392,9 +397,11 @@ end
 --- Draws a config page and loop-waits for touch/chat/timeout.
 ---   touch on Prev/Next — redraw and wait again.
 ---   touch on Back — return "back", nil
----   timeout 30s — return "timeout", nil
+---   timeout (default 30s) — return "timeout", nil
 ---   chat/chat_signed — return "chat", message text
-function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
+--- @param timeout number|nil seconds before auto-return "timeout" (default 30)
+function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, timeout)
+    timeout = timeout or 30
     local w, h = mon.getSize()
     local area = HudUtil.getArea(mon)
     local listX, listY, listW, listBg = area.x, area.y, area.w, area.bgColor
@@ -467,7 +474,7 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
         local footer = HudUtil.getFooter(mon, 1, 1)
         local backBtn = footer.back
         MonitorUtil.drawButton(mon, backBtn, false)
-        local timeoutId = os.startTimer(30)
+        local timeoutId = os.startTimer(timeout)
         while true do
             local rawEvent = {os.pullEventRaw()}
             local event = rawEvent[1]
@@ -478,8 +485,13 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
                 local pressed = MonitorUtil.getPressedButton({backBtn}, tx, ty)
                 if pressed then return "back", nil end
             elseif event == "chat_signed" or event == "chat" then
-                local msg = (rawEvent[3] or ""):match("^%s*(.-)%s*$") or ""
-                local player = rawEvent[2]
+                local player, rawMsg
+                if event == "chat_signed" then
+                    player, rawMsg = rawEvent[2], rawEvent[3]
+                else
+                    player, rawMsg = ChatUtil.extractChat(rawEvent)
+                end
+                local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
                 if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
                     -- own echo — skip
                 else
@@ -528,7 +540,7 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
         end
         MonitorUtil.drawButton(mon, backBtn, false)
 
-        local timeoutId = os.startTimer(30)
+        local timeoutId = os.startTimer(timeout)
         local waiting = true
         local result = nil
         local capturedMessage = nil
@@ -569,8 +581,13 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
                 end
 
             elseif event == "chat_signed" or event == "chat" then
-                local msg = (rawEvent[3] or ""):match("^%s*(.-)%s*$") or ""
-                local player = rawEvent[2]
+                local player, rawMsg
+                if event == "chat_signed" then
+                    player, rawMsg = rawEvent[2], rawEvent[3]
+                else
+                    player, rawMsg = ChatUtil.extractChat(rawEvent)
+                end
+                local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
                 if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
                     -- own echo — skip
                 else
@@ -734,8 +751,13 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
                 end
 
             elseif event == "chat_signed" or event == "chat" then
-                local msg = (rawEvent[3] or ""):match("^%s*(.-)%s*$") or ""
-                local player = rawEvent[2]
+                local player, rawMsg
+                if event == "chat_signed" then
+                    player, rawMsg = rawEvent[2], rawEvent[3]
+                else
+                    player, rawMsg = ChatUtil.extractChat(rawEvent)
+                end
+                local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
                 if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
                     -- own echo — skip
                 else

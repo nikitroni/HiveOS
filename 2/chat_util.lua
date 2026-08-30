@@ -5,6 +5,9 @@
 
 local ChatUtil = {}
 
+-- Diagnostic logger (logs/error.log) — used to trace which send branch runs.
+local LogUtil = require("log_util")
+
 -- Reference to the wrapped chat_box
 local chatBox = nil
 -- Name of the chat_box peripheral
@@ -13,6 +16,12 @@ local chatBoxName = nil
 local chatBoxPlayerName = nil
 -- Last sent message (for echo filtering)
 local lastSentMessage = nil
+-- Send format detected for the connected chat box:
+--   "new"    = AP 0.8+: sendMessage(text, {prefix=...})            (options map)
+--   "legacy" = AP 0.7/1.21: sendMessage(text, prefix, brackets, color, range, utf8)
+--   "plain"  = 1-arg sendMessage(text) (last resort)
+-- nil until the first successful send chooses a format.
+local sendFormat = nil
 
 -- Delay between messages in seconds.
 -- Minecraft client needs time to display messages from chat_box.
@@ -84,6 +93,7 @@ function ChatUtil.init(name)
         if chatBox then
             chatBoxName = name
             chatBoxPlayerName = tryGetChatBoxPlayerName(chatBox)
+            LogUtil.warn("ChatUtil.init: wrapped named peripheral '" .. chatBoxName .. "', player='" .. (chatBoxPlayerName or "?") .. "'")
             return true
         end
     end
@@ -99,12 +109,14 @@ function ChatUtil.init(name)
                     chatBox = wrapped
                     chatBoxName = pName
                     chatBoxPlayerName = tryGetChatBoxPlayerName(chatBox)
+                    LogUtil.warn("ChatUtil.init: wrapped '" .. chatBoxName .. "' (methods: " .. table.concat(methods, ",") .. ")")
                     return true
                 end
             end
         end
     end
 
+    LogUtil.warn("ChatUtil.init: NO peripheral with sendMessage found. Names: " .. table.concat(allNames, ","))
     return false
 end
 
@@ -128,44 +140,79 @@ function ChatUtil.send(message)
         return false
     end
 
-    -- IMPORTANT: call chatBox.sendMessage(...) as a DIRECT method call, exactly
-    -- like the in-game test:
-    --   chatBox.sendMessage(text, "HeartOS", nil, nil, nil, true)
-    -- The prefix arg ("HeartOS") makes the box display "[HeartOS] ...", and the
-    -- 6th arg (true) enables MOTD color parsing.
-    -- WARNING: do NOT use pcall(chatBox.sendMessage, chatBox, ...) — for the
-    -- Chat Box the detached method + table self breaks the call and the box
-    -- silently drops the message. Always call it as a plain method.
-    local success, err = pcall(function()
-        if chatBox.sendMessage then
-            local sendOk, sendErr = pcall(function()
+    -- The Chat Box API changed between AP versions (ATM10 ships 0.8+):
+    --   - Legacy (works in older AP): sendMessage(text, "HeartOS", nil, nil, nil, true)
+    --   - New (AP 0.8+): the 2nd argument must be an OPTIONS TABLE:
+    --       sendMessage(text, { prefix = "HeartOS", brackets = "[]" })
+    --   Passing a string as 2nd arg in the new API throws:
+    --     "bad argument #2 (map expected, got string)"
+    --   and then the 1-arg fallback silently drops prefix + MOTD colors —
+    --   exactly the reported bug (no [HeartOS] tag, literal § symbol).
+    -- We auto-detect the format on the first successful send and reuse it.
+    local sendOk = false
+    local sendErr = nil
+
+    if sendFormat == "legacy" then
+        sendOk, sendErr = pcall(function()
+            chatBox.sendMessage(message, TERMINAL_TAG, nil, nil, nil, true)
+        end)
+    elseif sendFormat == "plain" then
+        sendOk, sendErr = pcall(function()
+            chatBox.sendMessage(message)
+        end)
+    else
+        -- Not detected yet or using the new options-table format.
+        -- Try the NEW (AP 0.8+) signature first:
+        --   sendMessage(text, { prefix = ..., utf8 = ... })
+        -- The box renders "[prefix] text"; brackets default to "[]".
+        -- NOTE: utf8 = true is REQUIRED — it converts the § bytes (C2 A7) we
+        -- embed into a proper UTF-8 char so the client renders MOTD colors.
+        local okNew, errNew = pcall(function()
+            chatBox.sendMessage(message, { prefix = TERMINAL_TAG, utf8 = true })
+        end)
+        if okNew then
+            if sendFormat == nil then
+                sendFormat = "new"
+                LogUtil.warn("ChatUtil.send: detected NEW chart box API (options map). Prefix: [" .. TERMINAL_TAG .. "]")
+            end
+            sendOk, sendErr = true, nil
+        elseif sendFormat == "new" then
+            sendOk, sendErr = false, errNew
+        else
+            -- New-format call failed (API might still be legacy). Try legacy 6-arg.
+            local okLegacy, errLegacy = pcall(function()
                 chatBox.sendMessage(message, TERMINAL_TAG, nil, nil, nil, true)
             end)
-            if not sendOk then
-                -- Last-resort fallback: plain 1-arg call (no prefix).
-                chatBox.sendMessage(message)
+            if okLegacy then
+                sendFormat = "legacy"
+                LogUtil.warn("ChatUtil.send: detected LEGACY chart box API (positional prefix).")
+                sendOk, sendErr = true, nil
+            else
+                -- Last-resort: plain 1-arg call (no prefix, no MOTD).
+                sendFormat = "plain"
+                LogUtil.warn("ChatUtil.send: both new and legacy signatures FAILED, using 1-arg fallback. Errors: "
+                    .. tostring(errNew) .. " | " .. tostring(errLegacy))
+                sendOk, sendErr = pcall(function()
+                    chatBox.sendMessage(message)
+                end)
             end
-        elseif chatBox.send then
-            chatBox.send(message)
-        elseif chatBox.say then
-            chatBox.say(message)
-        elseif chatBox.print then
-            chatBox.print(message)
-        else
-            return false, "No send method found"
         end
-    end)
+    end
+
+    if not sendOk then
+        -- Keep logging the error so a broken chat box remains visible.
+        LogUtil.warn("ChatUtil.send: send FAILED: " .. tostring(sendErr))
+        return false
+    end
 
     -- Remember last sent message to filter echo
-    if success then
-        lastSentMessage = message
-    end
+    lastSentMessage = message
 
     -- Pause after sending so Minecraft client can display the message.
     -- Without delay, messages sent in rapid succession may be lost.
     os.sleep(SEND_DELAY)
 
-    return success
+    return true
 end
 
 --- Strip MOTD color codes (§ + 1 char) from a string.
@@ -299,8 +346,12 @@ local function flushEchoEvents()
         end
         local event = eventData[1]
         if event == "chat" or event == "chat_signed" then
-            local message = eventData[2]
-            local player = eventData[3]
+            local message, player
+            if event == "chat" then
+                player, message = ChatUtil.extractChat(eventData)
+            else
+                player, message = eventData[2], eventData[3]
+            end
             if isOwnEcho(message, player) then
                 flushed = flushed + 1
                 -- Ignore — this is echo
@@ -334,6 +385,12 @@ end
 ---   - chat: can be from player or chat_box (echo).
 ---     In ATM10 CC:Tweaked, eventData[2] = player name, eventData[3] = message.
 ---     Filter via isOwnEcho.
+---
+--- IMPORTANT (AP 0.8+): the chat_box now queues events in a NEW layout:
+---   old: chat, playerName, message,        uuid,    hidden,  byteString
+---   new: chat, senderId,    playerName, message,  hidden,  byteString
+--- So the message index shifted from 3 to 4, and player name from 2 to 3.
+--- We detect the layout by checking whether arg[3] looks like a player name.
 --- Before waiting, drain 0.7s to flush
 --- all accumulated events (echo from chat_box).
 --- @param timeout number|nil max wait time in seconds (nil = infinite)
@@ -364,14 +421,40 @@ function ChatUtil.waitForChat(timeout)
                 return message, player
             end
         elseif event == "chat" then
-            -- chat: eventData[2] = player name, eventData[3] = message (ATM10 CC:Tweaked)
-            local player = eventData[2]
-            local message = eventData[3]
+            local player, message = ChatUtil.extractChat(eventData)
             if message and message ~= "" and not isOwnEcho(message, player) then
                 return message, player
             end
         end
     end
+end
+
+--- Extract (player, message) from a "chat" event.
+--- Handles both AP chat_box event layouts:
+---   legacy (AP <0.8): chat, playerName, message, uuid,  hidden, bs
+---   new    (AP 0.8+): chat, senderId,  playerName, message, hidden, bs
+--- Discriminators:
+---   - senderId (new, index 2) is a UUID string or nil.
+---   - In the legacy layout index 2 is a plain player name.
+--- @param eventData table raw event arguments (event at index 1)
+--- @return string|nil player
+--- @return string|nil message
+function ChatUtil.extractChat(eventData)
+    local senderId = eventData[2]
+    local playerName = eventData[3]
+    local message = eventData[4]
+
+    -- New AP 0.8+ layout (senderId first). UUID format: 8-4-4-4-12 hex.
+    if type(senderId) == "string" and senderId:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+        return playerName, message
+    end
+    -- New layout without senderId (chat_box-generated, senderId = nil).
+    if senderId == nil and type(playerName) == "string" and type(message) == "string" then
+        return playerName, message
+    end
+
+    -- Legacy layout: chat, playerName, message, ...
+    return eventData[2], eventData[3]
 end
 
 --- Trim whitespace from both ends of a string
@@ -428,8 +511,7 @@ function ChatUtil.waitForAnyMessage(timeout)
                 return message
             end
         elseif event == "chat" then
-            local player = eventData[2]
-            local message = eventData[3]
+            local player, message = ChatUtil.extractChat(eventData)
             if message and message ~= "" and not isOwnEcho(message, player) then
                 return message
             end

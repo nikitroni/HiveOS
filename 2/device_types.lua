@@ -85,8 +85,8 @@ return {
         group = "labos",
     },
     {
-        key = "refresh",
-        label = "Refresh Button Monitor",
+        key = "breed",
+        label = "Breed Button Monitor",
         checkMethods = {"write", "setCursorPos"},
         max = 1,
         group = "labos",

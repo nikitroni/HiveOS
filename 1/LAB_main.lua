@@ -206,7 +206,7 @@ Buttons.setCallbacks({
     onBeeOut = onBeeOut,
     onGeneUpgrade = onGeneUpgrade,
     onBeeProduce = onBeeProduce,
-    onRefresh = onBreed,   -- теперь кнопка REFRESH запускает размножение
+    onBreed = onBreed,   
 })
 
 -- ==================== ПОТОК ОБРАБОТКИ СОБЫТИЙ ====================

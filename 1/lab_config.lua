@@ -10,7 +10,7 @@ return {
             bee_out     = "monitor_7",
             gene_upgrade = "monitor_8",
             bee_produce = "monitor_9",
-            refresh     = "monitor_10",
+            breed     = "monitor_10",
         },
         cage_chest      = "minecraft:barrel_2",  -- сундук с пустыми клетками
         lab_chest       = "minecraft:barrel_1",  -- сундук с пчёлами
