@@ -40,7 +40,8 @@ setupRednet()
 
 -- ==================== ЗАПУСК ИНТЕРФЕЙСА ====================
 
-mainMon.setTextScale(1)
+local textScale = (heartConfig.hud and heartConfig.hud.text_scale) or 1
+mainMon.setTextScale(textScale)
 
 local MainMenu = require("screens/main_menu")
 MainMenu.show(mainMon, heartConfig)

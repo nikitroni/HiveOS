@@ -4,6 +4,7 @@
 -- Monitor only shows menu and summary
 
 local MonitorUtil = require("screens/monitor_util")
+local HudUtil = require("screens/hud_util")
 local ConfigManager = require("config_manager")
 local ConfigWizard = require("config_wizard")
 local DeviceTypes = require("device_types")
@@ -48,7 +49,8 @@ local function viewLabOSConfig(mon, heartConfig)
     if not config then
         local w, h = mon.getSize()
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, "=== View LabOS Config ===", 2)
+        HudUtil.drawBackground(mon, "create_edit")
+        MonitorUtil.drawTitle(mon, "===   View LabOS Config  ===", 2)
         MonitorUtil.drawText(mon, 2, 4, "LabOS config: NOT FOUND", COLORS.error)
         MonitorUtil.drawText(mon, 2, 5, tostring(err), COLORS.error)
         MonitorUtil.drawText(mon, 2, h - 1, "Tap to return...", COLORS.darkGray)
@@ -71,7 +73,7 @@ local function viewLabOSConfig(mon, heartConfig)
         end
     end
 
-    MonitorUtil.paginatedView(mon, "=== View LabOS Config ===", items, heartConfig.main_monitor)
+    MonitorUtil.paginatedView(mon, "===   View LabOS Config  ===", items, heartConfig.main_monitor, nil, nil, "labos")
 end
 
 --- Edit: select groups to replace via editByKeys
@@ -147,48 +149,32 @@ end
 -- ==================== MAIN ENTRY ====================
 
 function ConfigLabOS.run(mon, heartConfig)
-    local w, h = mon.getSize()
-
     if not ChatUtil.isAvailable() then
         ChatUtil.init(nil)
     end
 
     while true do
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, "=== Configure LabOS ===", 2)
+        HudUtil.drawBackground(mon, "labos")
+        HudUtil.drawLabel(mon, "labos", "title")
 
-        local descriptions = {
-            { title = "Create", desc = "Start a new device\nconfiguration.\nAll current settings\nwill be overwritten.", action = "create", color = colors.green },
-            { title = "Edit", desc = "Modify existing device\nsettings.\nYou can change or\nremove devices.", action = "edit", color = colors.orange },
-            { title = "View", desc = "Display the current\ndevice configuration\nfor review.", action = "view", color = colors.blue },
-        }
-
-        local colWidth = 16
-        local gap = 2
-        local totalWidth = colWidth * 3 + gap * 2
-        local startX = math.floor((w - totalWidth) / 2) + 1
-        if startX < 1 then startX = 1 end
-        local colY = 5
+        local labos = HudUtil.get("labos")
         local buttons = {}
 
-        for i, col in ipairs(descriptions) do
-            local colX = startX + (i - 1) * (colWidth + gap)
-            MonitorUtil.drawText(mon, colX, colY, "[" .. col.title .. "]", col.color)
-            local lines = {}
-            for line in col.desc:gmatch("[^\n]+") do
-                table.insert(lines, line)
+        for _, col in ipairs(labos.columns or {}) do
+            HudUtil.drawColumn(mon, "labos", col)
+            local btn = HudUtil.createButton(mon, "labos", col.id)
+            if btn then
+                table.insert(buttons, btn)
+                MonitorUtil.drawButton(mon, btn, false)
             end
-            for j, line in ipairs(lines) do
-                MonitorUtil.drawText(mon, colX, colY + j + 1, line, COLORS.text)
-            end
-            local btn = MonitorUtil.createButton(colX + 1, colY + 7, colWidth - 2, " [  Start  ] ", col.action, colors.gray)
-            table.insert(buttons, btn)
-            MonitorUtil.drawButton(mon, btn, false)
         end
 
-        local backBtn = MonitorUtil.createButton(2, h - 1, 10, " [  Back  ] ", "back", colors.red)
-        MonitorUtil.drawButton(mon, backBtn, false)
-        table.insert(buttons, backBtn)
+        local backBtn = HudUtil.createButton(mon, "labos", "back")
+        if backBtn then
+            table.insert(buttons, backBtn)
+            MonitorUtil.drawButton(mon, backBtn, false)
+        end
 
         local ok, event, side, tx, ty = pcall(os.pullEvent, "monitor_touch")
         if ok and side == heartConfig.main_monitor then

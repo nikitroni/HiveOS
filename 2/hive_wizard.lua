@@ -7,6 +7,7 @@
 -- The result is saved to hives_map.lua and sent to BeeOS via rednet.
 
 local MonitorUtil = require("screens/monitor_util")
+local HudUtil = require("screens/hud_util")
 local ChatUtil = require("chat_util")
 local ConfigWizard = require("config_wizard")
 local ConfigManager = require("config_manager")
@@ -187,18 +188,21 @@ end
 --- @param map table array of { id, hive, reader, relay }
 local function showSummary(mon, map)
   local w, h = mon.getSize()
+  local area = HudUtil.getArea(mon)
+  local listX, listY, listBg = area.x, area.y, area.bgColor
   MonitorUtil.clearScreen(mon)
-  MonitorUtil.drawTitle(mon, "=== Hive Map Summary ===", 2)
-  local y = 4
+  HudUtil.drawBackground(mon, "create_edit")
+  HudUtil.createEditTitle(mon, "=== Hive Map Summary ===")
+  local y = listY
   for _, hive in ipairs(map) do
     if y > h - 3 then
-      MonitorUtil.drawText(mon, 2, y, "(List continued in chat)", COLORS.darkGray)
+      MonitorUtil.drawText(mon, listX, y, "(List continued in chat)", COLORS.darkGray, listBg)
       break
     end
-    MonitorUtil.drawText(mon, 2, y, hiveIdStr(hive.id), COLORS.highlight)
-    MonitorUtil.drawText(mon, 4, y + 1, "hive:   " .. tostring(hive.hive), COLORS.text)
-    MonitorUtil.drawText(mon, 4, y + 2, "reader: " .. tostring(hive.reader), COLORS.text)
-    MonitorUtil.drawText(mon, 4, y + 3, "relay:  " .. tostring(hive.relay), COLORS.text)
+    MonitorUtil.drawText(mon, listX, y, hiveIdStr(hive.id), COLORS.highlight, listBg)
+    MonitorUtil.drawText(mon, listX, y + 1, "hive:   " .. tostring(hive.hive), COLORS.text, listBg)
+    MonitorUtil.drawText(mon, listX, y + 2, "reader: " .. tostring(hive.reader), COLORS.text, listBg)
+    MonitorUtil.drawText(mon, listX, y + 3, "relay:  " .. tostring(hive.relay), COLORS.text, listBg)
     y = y + 4
   end
 end
@@ -247,9 +251,12 @@ end
 --- @param color number
 local function exitInfo(mon, text, color)
   local w, h = mon.getSize()
+  local area = HudUtil.getArea(mon)
+  local listX, listY, listBg = area.x, area.y, area.bgColor
   MonitorUtil.clearScreen(mon)
-  MonitorUtil.drawTitle(mon, "=== Hive Map Wizard ===", 2)
-  MonitorUtil.drawText(mon, 2, 4, text, color)
+  HudUtil.drawBackground(mon, "create_edit")
+  HudUtil.createEditTitle(mon, "=== Hive Map Wizard ===")
+  MonitorUtil.drawText(mon, listX, listY, text, color, listBg)
   os.sleep(2)
 end
 
@@ -287,9 +294,12 @@ function HiveWizard.create(mon, heartConfig)
   end
 
   local w, h = mon.getSize()
+  local area = HudUtil.getArea(mon)
+  local listX, listY, listBg = area.x, area.y, area.bgColor
   MonitorUtil.clearScreen(mon)
-  MonitorUtil.drawTitle(mon, "=== Hive Map Wizard: Create ===", 2)
-  MonitorUtil.drawText(mon, 2, 4, "Follow instructions in CHAT.", COLORS.highlight)
+  HudUtil.drawBackground(mon, "create_edit")
+  HudUtil.createEditTitle(mon, "=== Hive Map Wizard: Create ===")
+  MonitorUtil.drawText(mon, listX, listY, "Follow instructions in CHAT.", COLORS.highlight, listBg)
   os.sleep(3)
 
   chatSeparator()
@@ -351,10 +361,13 @@ function HiveWizard.edit(mon, heartConfig)
     ChatUtil.init(nil)
   end
 
-  local w, h = mon.getSize()
+local w, h = mon.getSize()
+  local area = HudUtil.getArea(mon)
+  local listX, listY, listBg = area.x, area.y, area.bgColor
   MonitorUtil.clearScreen(mon)
-  MonitorUtil.drawTitle(mon, "=== Hive Map Wizard: Edit ===", 2)
-  MonitorUtil.drawText(mon, 2, 4, "Follow instructions in CHAT.", COLORS.highlight)
+  HudUtil.drawBackground(mon, "create_edit")
+  HudUtil.createEditTitle(mon, "=== Hive Map Wizard: Edit ===")
+  MonitorUtil.drawText(mon, listX, listY, "Follow instructions in CHAT.", COLORS.highlight, listBg)
   os.sleep(3)
 
   local map, err = ConfigManager.loadFromFile(HIVES_FILE)

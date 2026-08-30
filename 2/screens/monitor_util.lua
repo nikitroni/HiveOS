@@ -22,25 +22,49 @@ MonitorUtil.COLORS = COLORS
 
 -- Create button data structure
 -- Single line buttons (no 2-line bracket wrapping)
-function MonitorUtil.createButton(x, y, width, label, action, color)
+-- height is optional (default 1) and used for rectangular hit testing
+function MonitorUtil.createButton(x, y, width, label, action, color, height)
     return {
         x = x, y = y,
         width = width or #label,
+        height = height or 1,
         label = label,
         action = action or "",
         color = color or COLORS.button_bg,
     }
 end
 
--- Draw a single button
+-- Draw a single button.
+-- Button fill = button.color; label color = button.textColor (default white).
+-- A label may contain "\n" to break it into several lines, which are drawn
+-- on consecutive rows from button.y (up to button.height rows).
 function MonitorUtil.drawButton(mon, button, isHovered)
     local bgColor = isHovered and COLORS.button_hover_bg or button.color
+    local x = button.x
+    local y = button.y
+    local width = button.width or #(button.label or "")
+    if width < 1 then width = 1 end
+    local height = button.height or 1
     mon.setBackgroundColor(bgColor)
-    mon.setTextColor(COLORS.button_text)
-    mon.setCursorPos(button.x, button.y)
-    -- Pad label to full width
-    local paddedLabel = button.label .. string.rep(" ", button.width - #button.label)
-    mon.write(paddedLabel)
+    mon.setTextColor(button.textColor or COLORS.button_text)
+
+    -- Split the label into lines on "\n". Empty lines are kept so a leading
+    -- or trailing "\n" shifts the text (e.g. "\nConfig BeeOS" -> row 2).
+    local lines = {}
+    for line in ((button.label or "") .. "\n"):gmatch("(.-)\n") do
+        table.insert(lines, line)
+    end
+    if #lines == 0 then lines = {""} end
+
+    -- Fill every row of the button block with bgColor and write lines on top.
+    for row = 0, height - 1 do
+        local line = lines[row + 1] or ""
+        if #line < width then
+            line = line .. string.rep(" ", width - #line)
+        end
+        mon.setCursorPos(x, y + row)
+        mon.write(line)
+    end
     mon.setBackgroundColor(COLORS.bg)
 end
 
@@ -69,22 +93,24 @@ end
 
 -- ==================== TEXT & TITLE ====================
 
--- Draw centered title
-function MonitorUtil.drawTitle(mon, text, y)
+-- Draw centered title. bg is optional (defaults to COLORS.bg).
+function MonitorUtil.drawTitle(mon, text, y, bg)
     local w, h = mon.getSize()
     local x = math.floor((w - #text) / 2) + 1
     if x < 1 then x = 1 end
     mon.setCursorPos(x, y)
     mon.setTextColor(COLORS.title)
-    mon.setBackgroundColor(COLORS.bg)
+    mon.setBackgroundColor(bg or COLORS.bg)
     mon.write(text)
 end
 
--- Draw text at position
-function MonitorUtil.drawText(mon, x, y, text, color)
+-- Draw text at position. bg is optional (defaults to COLORS.bg).
+-- When drawing over a HUD background, pass a bg matching the image
+-- so the text does not paint a black box over it.
+function MonitorUtil.drawText(mon, x, y, text, color, bg)
     mon.setCursorPos(x, y)
     mon.setTextColor(color or COLORS.text)
-    mon.setBackgroundColor(COLORS.bg)
+    mon.setBackgroundColor(bg or COLORS.bg)
     mon.write(text)
 end
 
@@ -262,11 +288,14 @@ end
 
 -- ==================== TOUCH HANDLING ====================
 
--- Find which button was pressed based on touch coordinates
+-- Find which button was pressed based on touch coordinates.
+-- Uses the button height for a rectangular vertical hit test (default 1).
 function MonitorUtil.getPressedButton(buttons, touchX, touchY)
     for _, btn in ipairs(buttons) do
-        if touchX >= btn.x and touchX <= btn.x + btn.width - 1
-        and touchY == btn.y then
+        local width = btn.width or #(btn.label or "")
+        local height = btn.height or 1
+        if touchX >= btn.x and touchX <= btn.x + width - 1
+        and touchY >= btn.y and touchY <= btn.y + height - 1 then
             return btn
         end
     end
@@ -275,6 +304,39 @@ end
 
 -- ==================== PAGINATED VIEW ====================
 
+-- Resolve the footer (back/prev/next buttons + page text position).
+-- With a screenId the layout comes from hud.create_edit config;
+-- without it the legacy hardcoded layout is used.
+local function resolvePaginatedFooter(mon, screenId, currentPage, totalPages)
+    if screenId then
+        local HudUtil = require("screens/hud_util")
+        local footer = HudUtil.getFooter(mon, currentPage + 1, totalPages)
+        local prev, next
+        if currentPage > 0 then prev = footer.prev end
+        if currentPage < totalPages - 1 then next = footer.next end
+        return footer.back, prev, next, footer.pageText, footer.pageX, footer.pageY, footer.pageColor, footer.pageBg
+    end
+
+    local w, h = mon.getSize()
+    local backBtn = MonitorUtil.createButton(2, h - 1, 7, " [Back]", "back", colors.red)
+    local prev, next
+    if currentPage > 0 then
+        prev = MonitorUtil.createButton(w - 19, h - 1, 7, " [<Prev]", "prev", colors.blue)
+    end
+    if currentPage < totalPages - 1 then
+        next = MonitorUtil.createButton(w - 11, h - 1, 7, " [Next>]", "next", colors.blue)
+    end
+    local pageText = "Page " .. (currentPage + 1) .. "/" .. totalPages
+    local pageX = math.floor((w - #pageText) / 2) + 1
+    if pageX < 1 then pageX = 1 end
+    local prevStart = w - 19
+    if pageX + #pageText >= prevStart then
+        pageX = prevStart - #pageText - 2
+    end
+    if pageX < 12 then pageX = 12 end
+    return backBtn, prev, next, pageText, pageX, h - 1, COLORS.highlight, nil
+end
+
 --- Show a paginated list of items on the monitor.
 --- @param mon table monitor
 --- @param title string centered title
@@ -282,9 +344,17 @@ end
 --- @param side string monitor side for touch events
 --- @param linesPerPage number|nil lines per page (excluding title and buttons). Default: h - 5
 --- @param interactive boolean|nil if true (default) waits for touch input; if false just draws first page and returns
-function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, interactive)
+--- @param screenId string|nil when set, draws the hud.create_edit background and uses its footer coordinates
+function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, interactive, screenId)
     if interactive == nil then interactive = true end
     local w, h = mon.getSize()
+    local listX, listY, listW, listBg = 4, 4, w - 4, nil
+    if screenId then
+        local HudUtil = require("screens/hud_util")
+        local area = HudUtil.getArea(mon)
+        listX, listY, listW, listBg = area.x, area.y, area.w, area.bgColor
+        if linesPerPage == nil then linesPerPage = area.h end
+    end
     linesPerPage = linesPerPage or (h - 5) -- leave 2 rows for buttons (h-1 and h)
     if linesPerPage < 1 then linesPerPage = 1 end
 
@@ -298,12 +368,12 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
         local lines = {}
 
         local oneLine = prefix .. display
-        if #oneLine <= w - 4 then
+        if #oneLine <= listW then
             table.insert(lines, {prefix = prefix, display = display, prefixLen = prefixLen, color = item.color})
         else
             -- Не влезло: помещаем максимум display на первой строке вместе с prefix
             local remaining = display
-            local canFit = w - 4 - prefixLen -- сколько символов display помещается на первой строке
+            local canFit = listW - prefixLen -- сколько символов display помещается на первой строке
             if canFit > 0 then
                 local take = canFit
                 if take > #remaining then take = #remaining end
@@ -321,7 +391,7 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
             end
 
             -- Остаток display на следующих строках (без отступа prefix)
-            local lineWidth = w - 4
+            local lineWidth = listW
             if lineWidth < 2 then lineWidth = 2 end
             while #remaining > 0 do
                 if #remaining <= lineWidth then
@@ -362,8 +432,15 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
     -- Если нет данных — рисуем сообщение и (если interactive) ждём Back
     if totalLines == 0 then
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, title, 2)
-        MonitorUtil.drawText(mon, 4, 4, "(no data to display)", COLORS.darkGray)
+        if screenId then
+            local HudUtil = require("screens/hud_util")
+            HudUtil.drawBackground(mon, "create_edit")
+            HudUtil.createEditTitle(mon, title)
+            backBtn = HudUtil.getFooter(mon, 1, 1).back
+        else
+            MonitorUtil.drawTitle(mon, title, 2, listBg)
+        end
+        MonitorUtil.drawText(mon, listX, listY, "(no data to display)", COLORS.darkGray, listBg)
         if interactive then
             MonitorUtil.drawButton(mon, backBtn, false)
             pcall(os.pullEvent, "monitor_touch")
@@ -373,21 +450,27 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
 
     while true do
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, title, 2)
+        if screenId then
+            local HudUtil = require("screens/hud_util")
+            HudUtil.drawBackground(mon, "create_edit")
+            HudUtil.createEditTitle(mon, title)
+        else
+            MonitorUtil.drawTitle(mon, title, 2, listBg)
+        end
 
         -- Draw items for current page
         local startLine = currentPage * linesPerPage + 1
         local endLine = math.min(startLine + linesPerPage - 1, totalLines)
         local lineIdx = 1
-        local drawnY = 4
+        local drawnY = listY
         for _, lines in ipairs(itemLines) do
             for _, line in ipairs(lines) do
                 if lineIdx >= startLine and lineIdx <= endLine then
                     if line.prefix ~= "" then
-                        MonitorUtil.drawText(mon, 4, drawnY, line.prefix, line.color)
+                        MonitorUtil.drawText(mon, listX, drawnY, line.prefix, line.color, listBg)
                     end
                     if line.display ~= "" then
-                        MonitorUtil.drawText(mon, 4 + line.prefixLen, drawnY, line.display, COLORS.text)
+                        MonitorUtil.drawText(mon, listX + line.prefixLen, drawnY, line.display, COLORS.text, listBg)
                     end
                     drawnY = drawnY + 1
                 end
@@ -395,30 +478,16 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
             end
         end
 
-        -- Page indicator (centered, shifted left if overlaps prev button)
-        local pageText = "Page " .. (currentPage + 1) .. "/" .. totalPages
-        local pageX = math.floor((w - #pageText) / 2) + 1
-        if pageX < 1 then pageX = 1 end
-        -- Ensure no overlap with buttons: prev starts at w-19, back ends at 2+7=9
-        local prevStart = w - 19
-        if pageX + #pageText >= prevStart then
-            pageX = prevStart - #pageText - 2
-        end
-        if pageX < 12 then pageX = 12 end
-        MonitorUtil.drawText(mon, pageX, h - 1, pageText, COLORS.highlight)
-
-        -- Prev/Next on the right side (compact width 7)
-        local prevBtn, nextBtn
-        if currentPage > 0 then
-            prevBtn = MonitorUtil.createButton(w - 19, h - 1, 7, " [<Prev]", "prev", colors.blue)
+        -- Page indicator + Back/Prev/Next from hud config (screenId) or legacy layout
+        local backBtn, prevBtn, nextBtn, pageText, pageX, pageY, pageColor, pageBg =
+            resolvePaginatedFooter(mon, screenId, currentPage, totalPages)
+        MonitorUtil.drawText(mon, pageX, pageY, pageText, pageColor, pageBg)
+        if prevBtn then
             MonitorUtil.drawButton(mon, prevBtn, false)
         end
-        if currentPage < totalPages - 1 then
-            nextBtn = MonitorUtil.createButton(w - 11, h - 1, 7, " [Next>]", "next", colors.blue)
+        if nextBtn then
             MonitorUtil.drawButton(mon, nextBtn, false)
         end
-
-        -- Back button (always on the left)
         MonitorUtil.drawButton(mon, backBtn, false)
 
         -- If not interactive, draw first page and return immediately
@@ -446,39 +515,7 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
 end
 
 -- ==================== DIALOGS ====================
-
--- Show yes/no confirmation dialog with buttons
--- Returns true if YES pressed, false if NO
-function MonitorUtil.confirmDialog(mon, message, x, y, side)
-    local btnYes = MonitorUtil.createButton(x, y + 2, 10, " [  YES  ] ", "yes", colors.green)
-    local btnNo  = MonitorUtil.createButton(x + 12, y + 2, 10, " [  NO   ] ", "no", colors.red)
-
-    -- Draw message
-    mon.setCursorPos(x, y)
-    mon.setTextColor(COLORS.text)
-    mon.setBackgroundColor(COLORS.bg)
-    mon.write(message)
-
-    -- Draw buttons
-    MonitorUtil.drawButton(mon, btnYes, false)
-    MonitorUtil.drawButton(mon, btnNo, false)
-
-    -- Wait for touch
-    while true do
-        local event, p1, p2, p3 = os.pullEvent()
-        if event == "monitor_touch" and p1 == side then
-            local buttons = { btnYes, btnNo }
-            local pressed = MonitorUtil.getPressedButton(buttons, p2, p3)
-            if pressed then
-                -- Clear dialog area
-                for row = y, y + 3 do
-                    mon.setCursorPos(x, row)
-                    mon.write(string.rep(" ", 24))
-                end
-                return pressed.action == "yes"
-            end
-        end
-    end
-end
+-- Confirmations are handled through chat answers (waitForYesNo), not via
+-- monitor buttons. No on-monitor yes/no dialog is provided.
 
 return MonitorUtil

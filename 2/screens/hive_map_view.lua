@@ -2,43 +2,50 @@
 -- Placeholder screen for the visual hive map.
 -- This screen will later render the actual hive layout map.
 -- For now it only shows a Signal action button, a placeholder button
--- and a Back button (always bottom-left, same position/size everywhere).
+-- and a Back button. Background and button positions come from
+-- hud.hive_map in heart_config.lua.
 
 local MonitorUtil = require("screens/monitor_util")
+local HudUtil = require("screens/hud_util")
 local ChatUtil = require("chat_util")
 
 local HiveMapView = {}
 
 function HiveMapView.run(mon, heartConfig)
-    local w, h = mon.getSize()
-
     if not ChatUtil.isAvailable() then
         ChatUtil.init(nil)
     end
 
     while true do
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, "=== Hive Map ===", 2)
+        HudUtil.drawBackground(mon, "hive_map")
+        HudUtil.drawLabel(mon, "hive_map", "title")
         MonitorUtil.drawText(mon, 2, 4, "Visual hive map (TODO)", colors.darkGray)
         MonitorUtil.drawText(mon, 2, 5, "Layout rendering not implemented yet.", colors.darkGray)
 
         local buttons = {}
-        table.insert(buttons, MonitorUtil.createButton(3, 8, 14, " [ Signal ] ", "signal", colors.green))
-        table.insert(buttons, MonitorUtil.createButton(3, 11, 14, " [  Slot  ] ", "slot", colors.lightGray))
 
-        for _, btn in ipairs(buttons) do
-            MonitorUtil.drawButton(mon, btn, false)
+        local signalBtn = HudUtil.createButton(mon, "hive_map", "signal")
+        if signalBtn then
+            table.insert(buttons, signalBtn)
+            MonitorUtil.drawButton(mon, signalBtn, false)
         end
 
-        local backBtn = MonitorUtil.createButton(2, h - 1, 10, " [  Back  ] ", "back", colors.red)
-        MonitorUtil.drawButton(mon, backBtn, false)
+        local slotBtn = HudUtil.createButton(mon, "hive_map", "slot")
+        if slotBtn then
+            table.insert(buttons, slotBtn)
+            MonitorUtil.drawButton(mon, slotBtn, false)
+        end
+
+        local backBtn = HudUtil.createButton(mon, "hive_map", "back")
+        if backBtn then
+            table.insert(buttons, backBtn)
+            MonitorUtil.drawButton(mon, backBtn, false)
+        end
 
         local ok, event, side, tx, ty = pcall(os.pullEvent, "monitor_touch")
         if ok and side == heartConfig.main_monitor then
-            local allButtons = {}
-            for _, b in ipairs(buttons) do table.insert(allButtons, b) end
-            table.insert(allButtons, backBtn)
-            local pressed = MonitorUtil.getPressedButton(allButtons, tx, ty)
+            local pressed = MonitorUtil.getPressedButton(buttons, tx, ty)
             if pressed then
                 if pressed.action == "signal" then
                     ChatUtil.sendSuccess("Signal pressed (action stub).")

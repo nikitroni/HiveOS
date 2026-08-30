@@ -3,6 +3,7 @@
 -- Monitor only shows summary; all interaction goes through in-game chat.
 
 local MonitorUtil = require("screens/monitor_util")
+local HudUtil = require("screens/hud_util")
 local ChatUtil = require("chat_util")
 local LogUtil = require("log_util")
 
@@ -286,7 +287,9 @@ end
 --- @return "dismissed"
 function ConfigWizard.displayPage(mon, monSide, title, items, linesPerPage)
     local w, h = mon.getSize()
-    linesPerPage = linesPerPage or (h - 5)
+    local area = HudUtil.getArea(mon)
+    local listX, listY, listW, listBg = area.x, area.y, area.w, area.bgColor
+    if linesPerPage == nil then linesPerPage = area.h end
     if linesPerPage < 1 then linesPerPage = 1 end
 
     -- Pre-compute item lines (same as editPageLoop)
@@ -298,11 +301,11 @@ function ConfigWizard.displayPage(mon, monSide, title, items, linesPerPage)
         local lines = {}
 
         local oneLine = prefix .. display
-        if #oneLine <= w - 4 then
+        if #oneLine <= listW then
             table.insert(lines, {prefix = prefix, display = display, prefixLen = prefixLen, color = item.color})
         else
             local remaining = display
-            local canFit = w - 4 - prefixLen
+            local canFit = listW - prefixLen
             if canFit > 0 then
                 local take = canFit
                 if take > #remaining then take = #remaining end
@@ -316,7 +319,7 @@ function ConfigWizard.displayPage(mon, monSide, title, items, linesPerPage)
             else
                 table.insert(lines, {prefix = prefix, display = "", prefixLen = prefixLen, color = item.color})
             end
-            local lineWidth = w - 4
+            local lineWidth = listW
             if lineWidth < 2 then lineWidth = 2 end
             while #remaining > 0 do
                 if #remaining <= lineWidth then
@@ -342,23 +345,24 @@ function ConfigWizard.displayPage(mon, monSide, title, items, linesPerPage)
     local totalPages = math.max(1, math.ceil(totalLines / linesPerPage))
 
     MonitorUtil.clearScreen(mon)
-    MonitorUtil.drawTitle(mon, title, 2)
+    HudUtil.drawBackground(mon, "create_edit")
+    HudUtil.createEditTitle(mon, title)
 
     if totalLines == 0 then
-        MonitorUtil.drawText(mon, 4, 4, "(no data to display)", MonitorUtil.COLORS.text)
+        MonitorUtil.drawText(mon, listX, listY, "(no data to display)", MonitorUtil.COLORS.text, listBg)
     else
         local startLine = 1
         local endLine = math.min(startLine + linesPerPage - 1, totalLines)
         local lineIdx = 1
-        local drawnY = 4
+        local drawnY = listY
         for _, lines in ipairs(itemLines) do
             for _, line in ipairs(lines) do
                 if lineIdx >= startLine and lineIdx <= endLine then
                     if line.prefix ~= "" then
-                        MonitorUtil.drawText(mon, 4, drawnY, line.prefix, line.color)
+                        MonitorUtil.drawText(mon, listX, drawnY, line.prefix, line.color, listBg)
                     end
                     if line.display ~= "" then
-                        MonitorUtil.drawText(mon, 4 + line.prefixLen, drawnY, line.display, MonitorUtil.COLORS.text)
+                        MonitorUtil.drawText(mon, listX + line.prefixLen, drawnY, line.display, MonitorUtil.COLORS.text, listBg)
                     end
                     drawnY = drawnY + 1
                 end
@@ -368,10 +372,8 @@ function ConfigWizard.displayPage(mon, monSide, title, items, linesPerPage)
     end
 
     if totalPages > 1 then
-        local pageText = "Page 1/" .. totalPages
-        local pageX = math.floor((w - #pageText) / 2) + 1
-        if pageX < 12 then pageX = 12 end
-        MonitorUtil.drawText(mon, pageX, h - 1, pageText, MonitorUtil.COLORS.highlight)
+        local footer = HudUtil.getFooter(mon, 1, totalPages)
+        MonitorUtil.drawText(mon, footer.pageX, footer.pageY, footer.pageText, footer.pageColor, footer.pageBg)
     end
 
     local timerId = os.startTimer(3)
@@ -394,7 +396,9 @@ end
 ---   chat/chat_signed — return "chat", message text
 function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
     local w, h = mon.getSize()
-    linesPerPage = linesPerPage or (h - 5)
+    local area = HudUtil.getArea(mon)
+    local listX, listY, listW, listBg = area.x, area.y, area.w, area.bgColor
+    if linesPerPage == nil then linesPerPage = area.h end
     if linesPerPage < 1 then linesPerPage = 1 end
 
     local currentPage = 0
@@ -407,11 +411,11 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
         local lines = {}
 
         local oneLine = prefix .. display
-        if #oneLine <= w - 4 then
+        if #oneLine <= listW then
             table.insert(lines, {prefix = prefix, display = display, prefixLen = prefixLen, color = item.color})
         else
             local remaining = display
-            local canFit = w - 4 - prefixLen
+            local canFit = listW - prefixLen
             if canFit > 0 then
                 local take = canFit
                 if take > #remaining then take = #remaining end
@@ -425,7 +429,7 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
             else
                 table.insert(lines, {prefix = prefix, display = "", prefixLen = prefixLen, color = item.color})
             end
-            local lineWidth = w - 4
+            local lineWidth = listW
             if lineWidth < 2 then lineWidth = 2 end
             while #remaining > 0 do
                 if #remaining <= lineWidth then
@@ -446,8 +450,6 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
         table.insert(itemLines, lines)
     end
 
-    local backBtn = MonitorUtil.createButton(2, h - 1, 9, " [Back]", "back", colors.red)
-
     -- Drain accumulated chat_box echo events before waiting.
     if ChatUtil.drainQueue then
         ChatUtil.drainQueue()
@@ -459,8 +461,11 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
 
     if totalLines == 0 then
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, title, 2)
-        MonitorUtil.drawText(mon, 4, 4, "(no data to display)", MonitorUtil.COLORS.text)
+        HudUtil.drawBackground(mon, "create_edit")
+        HudUtil.createEditTitle(mon, title)
+        MonitorUtil.drawText(mon, listX, listY, "(no data to display)", MonitorUtil.COLORS.text, listBg)
+        local footer = HudUtil.getFooter(mon, 1, 1)
+        local backBtn = footer.back
         MonitorUtil.drawButton(mon, backBtn, false)
         local timeoutId = os.startTimer(30)
         while true do
@@ -486,20 +491,21 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
 
     while true do
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, title, 2)
+        HudUtil.drawBackground(mon, "create_edit")
+        HudUtil.createEditTitle(mon, title)
 
         local startLine = currentPage * linesPerPage + 1
         local endLine = math.min(startLine + linesPerPage - 1, totalLines)
         local lineIdx = 1
-        local drawnY = 4
+        local drawnY = listY
         for _, lines in ipairs(itemLines) do
             for _, line in ipairs(lines) do
                 if lineIdx >= startLine and lineIdx <= endLine then
                     if line.prefix ~= "" then
-                        MonitorUtil.drawText(mon, 4, drawnY, line.prefix, line.color)
+                        MonitorUtil.drawText(mon, listX, drawnY, line.prefix, line.color, listBg)
                     end
                     if line.display ~= "" then
-                        MonitorUtil.drawText(mon, 4 + line.prefixLen, drawnY, line.display, MonitorUtil.COLORS.text)
+                        MonitorUtil.drawText(mon, listX + line.prefixLen, drawnY, line.display, MonitorUtil.COLORS.text, listBg)
                     end
                     drawnY = drawnY + 1
                 end
@@ -507,23 +513,17 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage)
             end
         end
 
-        local pageText = "Page " .. (currentPage + 1) .. "/" .. totalPages
-        local pageX = math.floor((w - #pageText) / 2) + 1
-        if pageX < 1 then pageX = 1 end
-        local prevStart = w - 19
-        if pageX + #pageText >= prevStart then
-            pageX = prevStart - #pageText - 2
-        end
-        if pageX < 12 then pageX = 12 end
-        MonitorUtil.drawText(mon, pageX, h - 1, pageText, MonitorUtil.COLORS.highlight)
+        local footer = HudUtil.getFooter(mon, currentPage + 1, totalPages)
+        MonitorUtil.drawText(mon, footer.pageX, footer.pageY, footer.pageText, footer.pageColor, footer.pageBg)
 
-        local prevBtn, nextBtn
-        if currentPage > 0 then
-            prevBtn = MonitorUtil.createButton(w - 19, h - 1, 7, " [<Prev]", "prev", colors.blue)
+        local backBtn, prevBtn, nextBtn
+        backBtn = footer.back
+        if currentPage > 0 then prevBtn = footer.prev end
+        if currentPage < totalPages - 1 then nextBtn = footer.next end
+        if prevBtn then
             MonitorUtil.drawButton(mon, prevBtn, false)
         end
-        if currentPage < totalPages - 1 then
-            nextBtn = MonitorUtil.createButton(w - 11, h - 1, 7, " [Next>]", "next", colors.blue)
+        if nextBtn then
             MonitorUtil.drawButton(mon, nextBtn, false)
         end
         MonitorUtil.drawButton(mon, backBtn, false)
@@ -600,7 +600,9 @@ end
 --- @return boolean|nil true=Y, false=N/Back, nil=timeout
 function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeout)
     local w, h = mon.getSize()
-    local linesPerPage = h - 5
+    local area = HudUtil.getArea(mon)
+    local listX, listY, listW, listBg = area.x, area.y, area.w, area.bgColor
+    local linesPerPage = area.h
     if linesPerPage < 1 then linesPerPage = 1 end
     local currentPage = 0
 
@@ -613,11 +615,11 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
         local lines = {}
 
         local oneLine = prefix .. display
-        if #oneLine <= w - 4 then
+        if #oneLine <= listW then
             table.insert(lines, {prefix = prefix, display = display, prefixLen = prefixLen, color = item.color})
         else
             local remaining = display
-            local canFit = w - 4 - prefixLen
+            local canFit = listW - prefixLen
             if canFit > 0 then
                 local take = canFit
                 if take > #remaining then take = #remaining end
@@ -631,7 +633,7 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
             else
                 table.insert(lines, { prefix = prefix, display = "", prefixLen = prefixLen, color = item.color })
             end
-            local lineWidth = w - 4
+            local lineWidth = listW
             if lineWidth < 2 then lineWidth = 2 end
             while #remaining > 0 do
                 if #remaining <= lineWidth then
@@ -665,20 +667,21 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
     while true do
         -- Draw page
         MonitorUtil.clearScreen(mon)
-        MonitorUtil.drawTitle(mon, title, 2)
+        HudUtil.drawBackground(mon, "create_edit")
+        HudUtil.createEditTitle(mon, title)
 
         local startLine = currentPage * linesPerPage + 1
         local endLine = math.min(startLine + linesPerPage - 1, totalLines)
         local lineIdx = 1
-        local drawnY = 4
+        local drawnY = listY
         for _, lines in ipairs(itemLines) do
             for _, line in ipairs(lines) do
                 if lineIdx >= startLine and lineIdx <= endLine then
                     if line.prefix ~= "" then
-                        MonitorUtil.drawText(mon, 4, drawnY, line.prefix, line.color)
+                        MonitorUtil.drawText(mon, listX, drawnY, line.prefix, line.color, listBg)
                     end
                     if line.display ~= "" then
-                        MonitorUtil.drawText(mon, 4 + line.prefixLen, drawnY, line.display, MonitorUtil.COLORS.text)
+                        MonitorUtil.drawText(mon, listX + line.prefixLen, drawnY, line.display, MonitorUtil.COLORS.text, listBg)
                     end
                     drawnY = drawnY + 1
                 end
@@ -686,23 +689,21 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
             end
         end
 
+        local footer = HudUtil.getFooter(mon, currentPage + 1, totalPages)
         if totalPages > 1 then
-            local pageText = "Page " .. (currentPage + 1) .. "/" .. totalPages
-            local pageX = math.floor((w - #pageText) / 2) + 1
-            if pageX < 12 then pageX = 12 end
-            MonitorUtil.drawText(mon, pageX, h - 1, pageText, MonitorUtil.COLORS.highlight)
+            MonitorUtil.drawText(mon, footer.pageX, footer.pageY, footer.pageText, footer.pageColor, footer.pageBg)
         end
 
         local prevBtn, nextBtn
-        if currentPage > 0 and totalPages > 1 then
-            prevBtn = MonitorUtil.createButton(w - 19, h - 1, 7, " [<Prev]", "prev", colors.blue)
+        if currentPage > 0 and totalPages > 1 then prevBtn = footer.prev end
+        if currentPage < totalPages - 1 then nextBtn = footer.next end
+        if prevBtn then
             MonitorUtil.drawButton(mon, prevBtn, false)
         end
-        if currentPage < totalPages - 1 then
-            nextBtn = MonitorUtil.createButton(w - 11, h - 1, 7, " [Next>]", "next", colors.blue)
+        if nextBtn then
             MonitorUtil.drawButton(mon, nextBtn, false)
         end
-        local backBtn = MonitorUtil.createButton(2, h - 1, 9, " [Back]", "back", colors.red)
+        local backBtn = footer.back
         MonitorUtil.drawButton(mon, backBtn, false)
 
         local timeoutId = os.startTimer(timeout or 120)
@@ -767,6 +768,8 @@ end
 --- @return table|nil updated config, or nil on cancel
 function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existingConfig, onSave)
     local w, h = mon.getSize()
+    local area = HudUtil.getArea(mon)
+    local listX, listY, listBg = area.x, area.y, area.bgColor
     local globalAllDevices = {}
 
     -- Collect all known peripheral names from existing config
@@ -784,9 +787,10 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     end
 
     MonitorUtil.clearScreen(mon)
-    MonitorUtil.drawTitle(mon, "=== Edit " .. configLabel .. " ===", 2)
-    MonitorUtil.drawText(mon, 2, 4, "Follow instructions in CHAT.", MonitorUtil.COLORS.highlight)
-    MonitorUtil.drawText(mon, 2, 5, "All responses go through in-game chat.", MonitorUtil.COLORS.text)
+    HudUtil.drawBackground(mon, "create_edit")
+    HudUtil.createEditTitle(mon, "=== Edit " .. configLabel .. " ===")
+    MonitorUtil.drawText(mon, listX, listY, "Follow instructions in CHAT.", MonitorUtil.COLORS.highlight, listBg)
+    MonitorUtil.drawText(mon, listX, listY + 1, "All responses go through in-game chat.", MonitorUtil.COLORS.text, listBg)
 
     chatSeparator()
     chatHighlight("=== Editing " .. configLabel .. " ===")
@@ -970,8 +974,9 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     chatSeparator()
     chatSuccess(configLabel .. " configuration updated!")
     MonitorUtil.clearScreen(mon)
-    MonitorUtil.drawTitle(mon, "=== Saving " .. configLabel .. " ===", 2)
-    MonitorUtil.drawText(mon, 2, 4, "Configuration updated!", MonitorUtil.COLORS.success)
+    HudUtil.drawBackground(mon, "create_edit")
+    HudUtil.createEditTitle(mon, "=== Saving " .. configLabel .. " ===")
+    MonitorUtil.drawText(mon, listX, listY, "Configuration updated!", MonitorUtil.COLORS.success, listBg)
 
     if onSave then
         onSave(updatedConfig)

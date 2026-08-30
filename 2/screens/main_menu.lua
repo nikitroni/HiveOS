@@ -1,11 +1,11 @@
 -- main_menu.lua
--- Главное меню HeartOS с кнопками настройки BeeOS, LabOS и Hive Map
+-- HeartOS main menu with BeeOS/LabOS/Hive Map buttons.
+-- Layout (title, hint, buttons) is driven by hud.main_menu in heart_config.lua.
 
 local MonitorUtil = require("screens/monitor_util")
+local HudUtil = require("screens/hud_util")
 
 local MainMenu = {}
-
-local COLORS = MonitorUtil.COLORS
 
 -- ID терминалов (будут установлены из heartConfig)
 local BEEOS_ID = 1
@@ -26,33 +26,23 @@ function MainMenu.show(mon, heartConfig)
     LABOS_ID = heartConfig.labos_id or 2
     openRednet(heartConfig)
 
-    local w, h = mon.getSize()
-
-    -- Три центральные кнопки
-    local btnY = math.floor(h / 2) - 3
-    local btnWidth = 28
-    local btnX = math.floor((w - btnWidth) / 2) + 1
-
     while true do
         MonitorUtil.clearScreen(mon)
+        HudUtil.drawBackground(mon, "main_menu")
+        HudUtil.drawLabel(mon, "main_menu", "title")
 
-        -- Заголовок
-        MonitorUtil.drawTitle(mon, "=== HeartOS Control Center ===", 2)
+        local hudMenu = HudUtil.get("main_menu")
+        local buttons = {}
 
-        -- Create buttons
-        local buttons = {
-            MonitorUtil.createButton(btnX, btnY, btnWidth, " Configure BeeOS  ", "beeos", colors.blue),
-            MonitorUtil.createButton(btnX, btnY + 3, btnWidth, " Configure LabOS  ", "labos", colors.blue),
-            MonitorUtil.createButton(btnX, btnY + 6, btnWidth, " Configure Hive  ", "hivemap", colors.purple),
-        }
-
-        -- Рисуем кнопки
-        for _, btn in ipairs(buttons) do
-            MonitorUtil.drawButton(mon, btn, false)
+        for _, cfgBtn in ipairs(hudMenu.buttons or {}) do
+            local btn = HudUtil.createButton(mon, "main_menu", cfgBtn.id)
+            if btn then
+                table.insert(buttons, btn)
+                MonitorUtil.drawButton(mon, btn, false)
+            end
         end
 
-        -- Подсказки
-        MonitorUtil.drawText(mon, 2, h - 1, "Select an option above", colors.darkGray)
+        HudUtil.drawLabel(mon, "main_menu", "hint")
 
         -- Обработка нажатий
         local ok, event, side, tx, ty = pcall(os.pullEvent, "monitor_touch")
