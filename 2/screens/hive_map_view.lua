@@ -175,7 +175,6 @@ function HiveMapView.run(mon, heartConfig)
   local currentPage = 0        -- 0-based
   local pageCount = math.max(1, math.ceil(math.min(maxId, MAX_ID) / SLOTS_PER_PAGE))
   local lastSignalAt = 0       -- debounce: wall time of the last signal tap
-  local lastSignalMsgAt = 0    -- throttle: wall time of the last "already running" notice
 
   local cellColors = grid.cellColors or {}
   local colPresent = HudUtil.color(cellColors.present or "green")
@@ -360,13 +359,10 @@ function HiveMapView.run(mon, heartConfig)
             if currentPage < pageCount - 1 then currentPage = currentPage + 1 end
             dirty = true
           elseif action == "signal" then
-            -- While a cycle runs: report remaining time, but THROTTLED so a
-            -- burst of rapid taps does not spam the chat on every tap.
+            -- While a cycle runs: ALWAYS report the remaining time immediately,
+            -- so a tap gives instant feedback (the countdown is accurate).
             if HiveSignal.isRunning() then
-              if os.time() - lastSignalMsgAt >= 5 then
-                lastSignalMsgAt = os.time()
-                ChatUtil.sendErrorImmediate("Signal already running. Try again in " .. tostring(HiveSignal.getRemainingSeconds()) .. "s.")
-              end
+              ChatUtil.sendErrorImmediate("Signal already running. Try again in " .. tostring(HiveSignal.getRemainingSeconds()) .. "s.")
             else
               -- Not running: debounce rapid double-taps before starting.
               if os.time() - lastSignalAt >= 1 then
