@@ -132,10 +132,29 @@ function ChatUtil.getDeviceName()
     return chatBoxName
 end
 
---- Send a raw message to chat
+local sendImpl  -- forward declaration; the real definition is below
+
+--- Send a raw message to chat (with the standard SEND_DELAY pause).
 --- @param message string Message text
 --- @return boolean true if sent successfully
 function ChatUtil.send(message)
+    return sendImpl(message, true)
+end
+
+--- Send a raw message to chat WITHOUT the blocking os.sleep pause.
+--- Use only from within event loops / handlers: a sleep there would swallow
+--- in-flight events (e.g. the relay phase timers of the hive signal cycle).
+--- @param message string Message text
+--- @return boolean true if sent successfully
+function ChatUtil.sendImmediate(message)
+    return sendImpl(message, false)
+end
+
+--- Internal send implementation.
+--- @param message string Message text
+--- @param withDelay boolean whether to os.sleep(SEND_DELAY) after sending
+--- @return boolean true if sent successfully
+sendImpl = function(message, withDelay)
     if not chatBox then
         return false
     end
@@ -210,7 +229,10 @@ function ChatUtil.send(message)
 
     -- Pause after sending so Minecraft client can display the message.
     -- Without delay, messages sent in rapid succession may be lost.
-    os.sleep(SEND_DELAY)
+    -- Skipped by sendImmediate() so event handlers stay non-blocking.
+    if withDelay then
+        os.sleep(SEND_DELAY)
+    end
 
     return true
 end
@@ -233,14 +255,32 @@ function ChatUtil.sendInfo(message)
     return ChatUtil.send(MOTD.white .. PREFIXES.info .. message)
 end
 
+--- Send an info message WITHOUT the blocking pause (event-loop safe).
+--- @param message string
+function ChatUtil.sendInfoImmediate(message)
+    return sendImpl(MOTD.white .. PREFIXES.info .. message, false)
+end
+
 --- Send a success message (green text)
 function ChatUtil.sendSuccess(message)
     return ChatUtil.send(MOTD.green .. PREFIXES.success .. message)
 end
 
+--- Send a success message WITHOUT the blocking pause (event-loop safe).
+--- @param message string
+function ChatUtil.sendSuccessImmediate(message)
+    return sendImpl(MOTD.green .. PREFIXES.success .. message, false)
+end
+
 --- Send an error message (red text)
 function ChatUtil.sendError(message)
     return ChatUtil.send(MOTD.red .. PREFIXES.error .. message)
+end
+
+--- Send an error message WITHOUT the blocking pause (event-loop safe).
+--- @param message string
+function ChatUtil.sendErrorImmediate(message)
+    return sendImpl(MOTD.red .. PREFIXES.error .. message, false)
 end
 
 --- Send a step instruction message (cyan text — user prompt)

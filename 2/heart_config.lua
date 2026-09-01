@@ -138,6 +138,45 @@ return {
       signal = { id = "signal", label = "\n     Signalise", action = "signal", x = 17, y = 12, w = 18, h = 3, bgColor = "magenta", textColor = "white" },
       slot = { id = "slot", label = "\n    Coming Soon", action = "slot", x = 17, y = 17, w = 18, h = 3, bgColor = "orange", textColor = "white" },
       back = { id = "back", label = "\n[ Back ]", action = "back", x=3, y=23, w=8, h=3, bgColor = "red", textColor = "white" },
+
+-- Hive grid. Each group maps slots 1..48 (one page) to monitor cells.
+      -- slotId -> cell: the layout math is in hive_map_view.lua; the groups
+      -- table lives HERE so all clickable zones come from the config.
+      -- Hive cell is FIXED at 2 wide x 1 tall in code (CELL_W x CELL_H):
+      --   the two digits occupy exactly 2 active cells, nothing more.
+      --   gapX - blank columns between horizontal neighbours (step = CELL_W + gapX)
+      --   gapY - blank rows    between vertical   neighbours (step = CELL_H + gapY)
+      --   Every `sectionSize` rows/cols form a section, separated by
+      --   `sectionGap` blank cells/columns.
+      -- cellColors: present = hive exists in hives_map.lua, absent = empty,
+      -- selected = toggled by the user (selection persists across pages).
+      grid = {
+        idFormat = "%02d",
+        cellColors = { present = "green", absent = "lightGray", selected = "yellow" },
+        groups = {
+          -- Group 1: left panel, bottom-up, 2 columns x 8 rows, sections of 4 pairs.
+          -- Two columns 2 blocks apart (gapX=2), rows 1 cell apart (gapY=1).
+          { idStart = 1, rows = 8, cols = 2, startX = 4, startY = 5, gapX = 2, gapY = 1, sectionGap = 1, sectionSize = 4, order = "bottom_up" },
+          -- Group 2: middle panel, left->right, 8 columns x 2 rows, sections of 4 cols.
+          -- Columns 1 cell apart (gapX=1 -> step 3), rows 1 cell apart (gapY=1 -> step 2);
+          -- sections split by 2 blank columns (gapX + sectionGap = 1 + 1).
+          { idStart = 17, rows = 2, cols = 8, startX = 14, startY = 5, gapX = 1, gapY = 1, sectionGap = 1, sectionSize = 4, order = "left_right" },
+          -- Group 3: right panel, top-down, 2 columns x 8 rows, sections of 4 pairs.
+          { idStart = 33, rows = 8, cols = 2, startX = 42, startY = 5, gapX = 2, gapY = 1, sectionGap = 1, sectionSize = 4, order = "top_down" },
+        },
+      },
+
+      -- Pagination (48 cells per page). Coordinates are skeleton placeholders,
+      -- fill real values after testing (see hive_map_view.lua footer).
+      page = { x = 21, y = 23, line = 2, textColor = "white", bgColor = "cyan" },
+      prev = { id = "prev", label = "      |\n<<Prev|\n      |", action = "prev", x = 36, y = 23, w = 6, h = 3, bgColor = "blue", textColor = "white" },
+      next = { id = "next", label = "|\n|Next>>\n|", action = "next", x = 42, y = 23, w = 7, h = 3, bgColor = "blue", textColor = "white" },
+
+      -- Signalise cycle timing: ON `on` s, OFF `off` s, repeated `cycles` times.
+      -- Total lock time = (on + off) * cycles = (2+1)*20 = 60 s.
+      -- During the cycle the relay pulses and the Signalise button is locked;
+      -- the chat reports the real remaining seconds.
+      signal_cycle = { on = 1, off = 0.5, cycles = 20 },
     },
   },
 }
