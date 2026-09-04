@@ -58,6 +58,9 @@ function MainMenu.show(mon, heartConfig)
                 elseif pressed.action == "hivemap" then
                     local HiveMenu = require("screens/hive_menu")
                     HiveMenu.run(mon, heartConfig)
+                elseif pressed.action == "library" then
+                    local LibraryMenu = require("screens/library_menu")
+                    LibraryMenu.run(mon, heartConfig)
                 end
             end
         end

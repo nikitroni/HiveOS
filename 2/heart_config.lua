@@ -38,7 +38,7 @@ return {
 
     beeos = {
       path = "screens/HUD/BeeOS_LabOS__Hive_menu_1.nfp",
-      title = { x = 11, y = 2, text = "   ===   Configure BeeOS   ===", textColor = "yellow", bgColor = "gray" },
+      title = { x = 11, y = 2, text = "   ===    Configure BeeOS    ===", textColor = "yellow", bgColor = "gray" },
       back = { id = "back", label = "\n[ Back ]", action = "back", x=3, y=23, w=8, h=3, bgColor = "red", textColor = "white" },
       columns = {
         {
@@ -64,7 +64,7 @@ return {
 
     labos = {
       path = "screens/HUD/BeeOS_LabOS__Hive_menu_1.nfp",
-      title = { x = 11, y = 2, text = "===   Configure LabOS   ===", textColor = "yellow", bgColor = "gray" },
+      title = { x = 11, y = 2, text = "===     Configure LabOS    ===", textColor = "yellow", bgColor = "gray" },
       back = { id = "back", label = "\n[ Back ]", action = "back", x=3, y=23, w=8, h=3, bgColor = "red", textColor = "white" },
       columns = {
         {
@@ -90,7 +90,7 @@ return {
 
     hive = {
       path = "screens/HUD/BeeOS_LabOS__Hive_menu_1.nfp",
-      title = { x = 11, y = 2, text = "===   Configure Hive    ===", textColor = "yellow", bgColor = "gray" },
+      title = { x = 11, y = 2, text = "===     Configure Hive     ===", textColor = "yellow", bgColor = "gray" },
       back = { id = "back", label = "\n[ Back ]", action = "back", x=3, y=23, w=8, h=3, bgColor = "red", textColor = "white" },
       columns = {
         {
@@ -134,7 +134,7 @@ return {
 
     hive_map = {
       path = "screens/HUD/Hive_map_2.nfp",
-      title = { x = 11, y = 2, text = "===   View Hive Map      ===", textColor = "yellow", bgColor = "gray" },
+      title = { x = 11, y = 2, text = "===   View Hive  Map    ===", textColor = "yellow", bgColor = "gray" },
       signal = { id = "signal", label = "\n     Signalise", action = "signal", x = 17, y = 12, w = 18, h = 3, bgColor = "magenta", textColor = "white" },
       slot = { id = "slot", label = "\n    Coming Soon", action = "slot", x = 17, y = 17, w = 18, h = 3, bgColor = "orange", textColor = "white" },
       back = { id = "back", label = "\n[ Back ]", action = "back", x=3, y=23, w=8, h=3, bgColor = "red", textColor = "white" },
@@ -177,6 +177,71 @@ return {
       -- During the cycle the relay pulses and the Signalise button is locked;
       -- the chat reports the real remaining seconds.
       signal_cycle = { on = 1, off = 0.5, cycles = 20 },
+    },
+
+    library = {
+      menu = {
+        background = "screens/HUD/HeartOS_library_menu.nfp",
+        title = { x = 11, y = 2, text = "===     L-I-B-R-A-R-Y      ===", textColor = "yellow", bgColor = "gray" },
+        buttons = {
+          { id = "productivity", label = "Productivity", x = 7, y = 7, w = 12, h = 2, bgColor = "black",  textColor = "white" },
+          { id = "weather",      label = " W.Tolerance",  x = 32, y = 7, w = 12, h = 2, bgColor = "black",   textColor = "white" },
+          { id = "behavior",     label = " Behavior",     x = 32, y = 11, w = 12, h = 2, bgColor = "black", textColor = "white" },
+          { id = "endurance",    label = "Endurance",    x = 7, y = 11, w = 12, h = 2, bgColor = "black", textColor = "white" },
+          { id = "back",         label = "\n[ Back ]",     x = 3, y = 23, w = 8, h = 3, bgColor = "red",    textColor = "white" },
+        },
+      },
+      detail = {
+        -- screen uses scale 4, plain black background
+        scale = 4,
+        list = { x = 3, y = 3, spacing = 2, textColor = "white", bgColor = "black" },
+      },
+      -- Gene data embedded here (loading 0/library.lua from HeartOS is not
+      -- possible in CC:Tweaked). Keys match the menu button ids.
+      genes = {
+        productivity = {
+          name = "Productivity",
+          header = string.char(18),  -- up/down arrows
+          levels = {
+            normal   = { sym = string.char(143), color = "green" },
+            medium   = { sym = string.char(8),   color = "blue" },
+            high     = { sym = string.char(7),   color = "pink" },
+            veryhigh = { sym = string.char(3),   color = "red" },
+          },
+          order = { "normal", "medium", "high", "veryhigh" },
+        },
+        weather = {
+          name = " W.Tolerance",
+          header = string.char(12),  -- theta
+          levels = {
+            none = { sym = string.char(143), color = "green" },
+            rain = { sym = string.char(7),   color = "pink" },
+            any  = { sym = string.char(3),   color = "red" },
+          },
+          order = { "none", "rain", "any" },
+        },
+        behavior = {
+          name = "  Behavior",
+          header = string.char(164),  -- sun
+          levels = {
+            diurnal    = { sym = string.char(143), color = "green" },
+            nocturnal  = { sym = string.char(7),   color = "pink" },
+            metaturnal = { sym = string.char(3),   color = "red" },
+          },
+          order = { "diurnal", "nocturnal", "metaturnal" },
+        },
+        endurance = {
+          name = "  Endurance",
+          header = string.char(167),  -- section sign
+          levels = {
+            weak   = { sym = string.char(143), color = "green" },
+            normal = { sym = string.char(8),   color = "blue" },
+            medium = { sym = string.char(7),   color = "pink" },
+            strong = { sym = string.char(3),   color = "red" },
+          },
+          order = { "weak", "normal", "medium", "strong" },
+        },
+      },
     },
   },
 }
