@@ -16,9 +16,10 @@ local COLORS = MonitorUtil.COLORS
 
 local CONFIG_FILE = "beeos_config.lua"
 
---- Send config to BeeOS via rednet
-local function trySendConfig(mon, heartConfig, startY)
-    local targetId = heartConfig.beeos_id or 1
+--- Отправить конфиг в BeeOS. Если терминал был заморожен (frozen=true) —
+--- использовать update_config + unfreeze. Иначе — старый request_config.
+local function trySendConfig(mon, heartConfig, startY, targetId, frozen)
+    targetId = targetId or heartConfig.beeos_id or 1
     local config, _ = ConfigManager.loadFromFile(CONFIG_FILE)
 
     if not config then
@@ -26,14 +27,37 @@ local function trySendConfig(mon, heartConfig, startY)
         return
     end
 
-    local ok, msg = ConfigManager.sendInitialConfig(targetId, config)
-    if ok then
-        ChatUtil.sendSuccess("Config sent to BeeOS!")
-        MonitorUtil.drawText(mon, 2, startY, "Sent to BeeOS!", COLORS.success)
+    local ok, msg
+    if frozen then
+        ok, msg = ConfigManager.sendUpdateConfig(targetId, config)
+        ConfigManager.unfreezeTerminal(targetId)  -- best effort: размораживаем в любом случае
+        if ok then
+            ChatUtil.sendSuccess("Config sent to BeeOS!")
+            MonitorUtil.drawText(mon, 2, startY, "Sent to BeeOS!", COLORS.success)
+        else
+            ChatUtil.sendError("Send failed: " .. msg)
+            MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
+        end
     else
-        ChatUtil.sendError("Send failed: " .. msg)
-        MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
+        ok, msg = ConfigManager.sendInitialConfig(targetId, config)
+        if ok then
+            ChatUtil.sendSuccess("Config sent to BeeOS!")
+            MonitorUtil.drawText(mon, 2, startY, "Sent to BeeOS!", COLORS.success)
+        else
+            ChatUtil.sendError("Send failed: " .. msg)
+            MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
+        end
     end
+end
+
+--- Заморозить BeeOS перед редактированием, чтобы он ждал с экраном загрузки
+local function freezeForEdit(heartConfig)
+    local targetId = heartConfig.beeos_id or 1
+    local ok, err = ConfigManager.freezeTerminal(targetId)
+    if not ok then
+        ChatUtil.sendError("BeeOS freeze failed (will try to send anyway): " .. tostring(err))
+    end
+    return targetId, ok
 end
 
 --- Получить цвет для группы по индексу (циклически)
@@ -97,6 +121,9 @@ local function editBeeOSConfig(mon, heartConfig)
         end
     end
 
+    -- Замораживаем BeeOS на время редактирования
+    local targetId, frozen = freezeForEdit(heartConfig)
+
     local result = ConfigWizard.editByKeys(
         deviceTypes,
         mon,
@@ -112,16 +139,21 @@ local function editBeeOSConfig(mon, heartConfig)
             newConfig.peripherals = updatedDevices
             ConfigManager.saveConfig(newConfig, CONFIG_FILE)
             ChatUtil.sendSuccess("BeeOS config updated!")
-            trySendConfig(mon, heartConfig, 10)
+            trySendConfig(mon, heartConfig, 10, targetId, frozen)
         end
     )
 
     if result == nil then
         ChatUtil.sendError("Edit cancelled.")
+        if frozen then
+            ConfigManager.unfreezeTerminal(targetId)
+        end
     end
 end
 
---- Create new config (devices only, no hive map)
+--- Create new config (devices only, no hive map).
+--- Ограничение: ходового мастера runWizard больше нет — новый конфиг собирается
+--- через тот же editByKeys (пустой стартовый конфиг): юзер добавляет разделы по одному.
 local function createBeeOSConfig(mon, heartConfig)
     if not ChatUtil.isAvailable() then
         ChatUtil.init(nil)
@@ -134,15 +166,28 @@ local function createBeeOSConfig(mon, heartConfig)
         end
     end
 
-    local result = ConfigWizard.runWizard(deviceTypes, mon, heartConfig.main_monitor, "BeeOS", function(devices)
-        local config = ConfigManager.createConfig(devices)
-        ConfigManager.saveConfig(config, CONFIG_FILE)
-        ChatUtil.sendSuccess("BeeOS config saved!")
-        trySendConfig(mon, heartConfig, 10)
-    end)
+    -- Замораживаем BeeOS на время создания конфига
+    local targetId, frozen = freezeForEdit(heartConfig)
+
+    local result = ConfigWizard.editByKeys(
+        deviceTypes,
+        mon,
+        heartConfig.main_monitor,
+        "BeeOS (Create)",
+        {},
+        function(devices)
+            local config = ConfigManager.createConfig(devices)
+            ConfigManager.saveConfig(config, CONFIG_FILE)
+            ChatUtil.sendSuccess("BeeOS config saved!")
+            trySendConfig(mon, heartConfig, 10, targetId, frozen)
+        end
+    )
 
     if result == nil then
         ChatUtil.sendError("Configuration cancelled.")
+        if frozen then
+            ConfigManager.unfreezeTerminal(targetId)
+        end
     end
 end
 

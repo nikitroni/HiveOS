@@ -1,18 +1,31 @@
 -- lab_manager.lua
 -- Модуль для отправки пчёл в лабораторию и их возврата.
--- Использует конфиг lab_config.lua для имён периферий.
+-- Имена периферий берутся из beeos_config.lua (peripherals).
 -- Rednet должен быть открыт до вызова функций.
 
-local config = require("lab_config")
 local Logger = require("logger")
 local LabManager = {}
 local lock = nil
+local lockFile = "lab_lock.dat"
+
+local function getPeripherals()
+    local cfg = nil
+    if fs.exists("beeos_config.lua") then
+        local handler, err = loadfile("beeos_config.lua")
+        if handler then
+            local ok, result = pcall(handler)
+            if ok and type(result) == "table" then cfg = result end
+        end
+    end
+    if cfg and cfg.peripherals then return cfg.peripherals end
+    return {}
+end
 
 -- Проверка блокировки
 function LabManager.isLocked()
     if lock then return lock end
-    if fs.exists(config.lock_file) then
-        local file = fs.open(config.lock_file, "r")
+    if fs.exists(lockFile) then
+        local file = fs.open(lockFile, "r")
         local lockedHive = file.readAll()
         file.close()
         lock = tonumber(lockedHive) or lockedHive
@@ -23,7 +36,7 @@ end
 
 function LabManager.lock(hiveId)
     lock = hiveId
-    local file = fs.open(config.lock_file, "w")
+    local file = fs.open(lockFile, "w")
     file.write(tostring(hiveId))
     file.close()
     Logger.log("LAB: Lock set for hive " .. hiveId)
@@ -31,14 +44,14 @@ end
 
 function LabManager.unlock()
     lock = nil
-    if fs.exists(config.lock_file) then
-        local success, err = pcall(fs.delete, config.lock_file)
+    if fs.exists(lockFile) then
+        local success, err = pcall(fs.delete, lockFile)
         if success then
             Logger.log("LAB: Lock removed (file deleted)")
         else
             Logger.log("LAB: Failed to delete lock file: " .. tostring(err))
             -- Перезаписываем пустым, чтобы не мешал
-            local file = fs.open(config.lock_file, "w")
+            local file = fs.open(lockFile, "w")
             file.write("")
             file.close()
         end
@@ -54,7 +67,8 @@ end
 
 -- Проверка свободных слотов в буфере
 local function hasSpaceInBuffer(needSlots)
-    local buffer = peripheral.wrap(config.buffer_chest)
+    local peripherals = getPeripherals()
+    local buffer = peripheral.wrap(peripherals.buffer_chest)
     if not buffer then
         Logger.log("LAB: Buffer chest not found")
         return false
@@ -75,7 +89,8 @@ end
 
 -- Освободить ровно count слотов в улье (слоты 3-11), перемещая предметы в буфер
 local function freeSlots(hiveBlock, count)
-    local buffer = peripheral.wrap(config.buffer_chest)
+    local peripherals = getPeripherals()
+    local buffer = peripheral.wrap(peripherals.buffer_chest)
     if not buffer then
         Logger.log("LAB: Buffer chest not found")
         return false
@@ -86,7 +101,7 @@ local function freeSlots(hiveBlock, count)
         if freed >= count then break end
         local item = hiveBlock.getItemDetail(slot)
         if item then
-            local moved = hiveBlock.pushItems(config.buffer_chest, slot)
+            local moved = hiveBlock.pushItems(peripherals.buffer_chest, slot)
             if moved > 0 then
                 freed = freed + 1
                 Logger.log("LAB: Moved " .. item.name .. " from slot " .. slot .. " to buffer")
@@ -105,9 +120,10 @@ end
 
 -- Помещение пустых клеток в слот 12
 local function putEmptyCages(hiveBlock, count)
-    local cageChest = peripheral.wrap(config.cage_chest)
+    local peripherals = getPeripherals()
+    local cageChest = peripheral.wrap(peripherals.cage_chest)
     if not cageChest then
-        Logger.log("LAB: Cage chest '" .. config.cage_chest .. "' not found")
+        Logger.log("LAB: Cage chest '" .. tostring(peripherals.cage_chest) .. "' not found")
         return 0
     end
 
@@ -135,9 +151,10 @@ end
 
 -- Забор клеток с пчёлами из слотов 3-11 (забирает все, возвращает количество)
 local function takeAllBeeCages(hiveBlock)
-    local labChest = peripheral.wrap(config.lab_chest)
+    local peripherals = getPeripherals()
+    local labChest = peripheral.wrap(peripherals.lab_chest)
     if not labChest then
-        Logger.log("LAB: Lab chest '" .. config.lab_chest .. "' not found")
+        Logger.log("LAB: Lab chest '" .. tostring(peripherals.lab_chest) .. "' not found")
         return 0
     end
 
@@ -145,7 +162,7 @@ local function takeAllBeeCages(hiveBlock)
     for slot = 3, 11 do
         local item = hiveBlock.getItemDetail(slot)
         if isBeeCage(item) then
-            local moved = hiveBlock.pushItems(config.lab_chest, slot)
+            local moved = hiveBlock.pushItems(peripherals.lab_chest, slot)
             if moved > 0 then
                 taken = taken + moved
                 Logger.log("LAB: Took " .. moved .. " bee cage from hive slot " .. slot)
@@ -172,7 +189,8 @@ end
 
 -- Возврат клеток с пчёлами в слот 12
 local function returnBeeCages(hiveBlock, count)
-    local labChest = peripheral.wrap(config.lab_chest)
+    local peripherals = getPeripherals()
+    local labChest = peripheral.wrap(peripherals.lab_chest)
     if not labChest then
         Logger.log("LAB: Lab chest not found for return")
         return 0
@@ -201,7 +219,8 @@ end
 
 -- Забор пустых клеток из слотов 3-11 обратно в хранилище клеток
 local function takeEmptyCages(hiveBlock)
-    local cageChest = peripheral.wrap(config.cage_chest)
+    local peripherals = getPeripherals()
+    local cageChest = peripheral.wrap(peripherals.cage_chest)
     if not cageChest then
         Logger.log("LAB: Cage chest not found for taking empty cages")
         return 0
@@ -211,7 +230,7 @@ local function takeEmptyCages(hiveBlock)
     for slot = 3, 11 do
         local item = hiveBlock.getItemDetail(slot)
         if isBeeCage(item) then
-            local moved = hiveBlock.pushItems(config.cage_chest, slot)
+            local moved = hiveBlock.pushItems(peripherals.cage_chest, slot)
             if moved > 0 then
                 taken = taken + moved
                 Logger.log("LAB: Took empty cage from hive slot " .. slot)

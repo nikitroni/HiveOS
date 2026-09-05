@@ -6,40 +6,40 @@ local hives = {}
 local updateInterval = 10
 local lastUpdate = 0
 
-function HiveReader.loadConfig(path)
-    path = path or "hives.cfg"
-    local file = fs.open(path, "r")
-    if not file then
-        error("hives.cfg not found at " .. path)
-    end
-    local content = file.readAll()
-    file.close()
+local function loadLuaTable(path)
+  if not fs.exists(path) then return nil end
+  local handler, err = loadfile(path)
+  if not handler then return nil end
+  local ok, result = pcall(handler)
+  if ok and type(result) == "table" then return result end
+  return nil
+end
 
-    if not content:match("^%s*return") then
-        content = "return " .. content
-    end
+function HiveReader.loadBeeOSConfig(path)
+  return loadLuaTable(path or "beeos_config.lua")
+end
 
-    local func, err = load(content, path, "t", {})
-    if not func then
-        error("Invalid hives.cfg syntax: " .. tostring(err))
-    end
-    local cfg = func()
-    if type(cfg) ~= "table" then
-        error("hives.cfg must return a table")
-    end
-
+function HiveReader.loadHiveMap(path)
+  path = path or "hives_map.lua"
+  local cfg = loadLuaTable(path)
+  if not cfg then
     hives = {}
-    for _, entry in ipairs(cfg) do
-        table.insert(hives, {
-            id = entry.id,
-            readerName = entry.reader_block,
-            hiveBlock = entry.hive_block,
-            reader = nil,
-            data = nil,
-            error = nil,
-        })
-    end
-    return #hives > 0
+    return false
+  end
+
+  hives = {}
+  for _, entry in ipairs(cfg) do
+    table.insert(hives, {
+      id = entry.id,
+      readerName = entry.reader or entry.reader_block,
+      hiveBlock = entry.hive or entry.hive_block,
+      relay = entry.relay or entry.relay_block,
+      reader = nil,
+      data = nil,
+      error = nil,
+    })
+  end
+  return #hives > 0
 end
 
 function HiveReader.connectAll()

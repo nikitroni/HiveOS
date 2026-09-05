@@ -38,7 +38,7 @@ end
 
 --- Получить цвет для группы по индексу (циклически)
 local function getGroupColor(index)
-    local colors = { colors.orange, colors.green, colors.blue, colors.purple, colors.yellow, colors.cyan, colors.pink, colors.lightGray }
+    local colors = { colors.orange, colors.green, colors.blue, colors.purple, colors.yellow, colors.cyan, colors.pink, colors.red }
     return colors[((index - 1) % #colors) + 1]
 end
 

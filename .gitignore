@@ -4,5 +4,8 @@
 .vscode/
 saves/
 **/logs/
+_logs/
 _paint/
 _test/
+_test.lua
+backups/

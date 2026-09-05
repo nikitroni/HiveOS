@@ -389,11 +389,17 @@ end
 
 -- ====================== ОСНОВНОЙ ЦИКЛ ======================
 
-local function run(mon)
+local function run(mon, opts)
+    opts = opts or {}
     local oldTerm = term.redirect(mon)
     mon.setTextScale(1.0)
 
     HiveReader.updateIfNeeded()
+
+    -- После перезагрузки конфига выбранный улей может исчезнуть
+    if mode == "detail" and (selectedHiveIndex < 1 or selectedHiveIndex > HiveReader.count()) then
+        mode = "list"
+    end
 
     if mode == "list" then
         drawList(mon)
@@ -412,9 +418,15 @@ local function run(mon)
         if event == "monitor_touch" and p1 == peripheral.getName(mon) then
             handleClick(mon, p2, p3)
 
-                elseif event == "rednet_message" then
+        elseif event == "rednet_message" then
             local senderId, message, protocol = p1, p2, p3
             print("DEBUG: rednet_message from " .. senderId .. ": " .. textutils.serialize(message))
+            if opts.rednetHandler then
+                local action = opts.rednetHandler(senderId, message)
+                if action == "reload" or action == "freeze" then
+                    return action
+                end
+            end
             if message and message.type == "lab_complete" then
                 local hiveId = message.hive_id
                 local beeCount = message.bee_count or 0
@@ -436,6 +448,12 @@ local function run(mon)
 
         elseif event == "timer" and p1 == timer then
             local now = os.clock()
+
+            -- Тик info-экранов (driven от единого владельца событий)
+            if opts.infoTick then
+                pcall(opts.infoTick, now)
+            end
+
             -- Обновляем данные, если прошло достаточно времени
             if now - lastUpdateTime >= updateInterval then
                 HiveReader.updateIfNeeded()

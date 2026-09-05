@@ -3,6 +3,48 @@ local Genetics = require("library")
 local config = require("info.HUD_info_config")
 -- paintutils глобален
 
+-- Фон грузится один раз (не каждый кадр) — источник мигания экрана.
+local bgImage = nil
+local function getBg()
+    if not bgImage then
+        bgImage = paintutils.loadImage("info/HUD_info.nfp")
+    end
+    return bgImage
+end
+
+-- Постоянный кэш «последнего состояния» по монитору: перерисовка только
+-- когда изменились страница / секунда таймера / данные (сигнатура).
+-- Это даёт гарантии, что HUD (nfp-фон) всегда рисуется, а «моргание»
+-- при обновлении не появляется (нет редрау без изменений).
+local lastState = {}
+
+-- Быстрая сигнатура видимого содержимого (пчелы/апгрейды/процент) —
+-- если она не изменилась, полный редрау не нужен.
+local function dataSignature(hives, page)
+    local parts = {}
+    local grid = config.grid
+    local startIdx = (page - 1) * grid.hives_per_page + 1
+    for i = 1, grid.hives_per_page do
+        local hive = hives[startIdx + i - 1]
+        if hive then
+            local d = hive.data or {}
+            local bee = ""
+            if d.bees and #d.bees > 0 then
+                bee = d.bees[1].type .. "x" .. #d.bees
+            end
+            local up = ""
+            if d.upgrades then
+                for _, u in ipairs(d.upgrades) do up = up .. u end
+            end
+            local pct = d.inventoryPercent or 0
+            parts[i] = bee .. "|" .. up .. "|" .. pct
+        else
+            parts[i] = "-"
+        end
+    end
+    return table.concat(parts, ";")
+end
+
 local function drawHiveStatic(mon, baseX, baseY, hiveId)
     local off = config.offsets
     mon.setBackgroundColor(colors.gray)
@@ -187,7 +229,7 @@ local function drawHiveData(mon, hive, baseX, baseY)
 end
 
 local function drawPage(mon, hives, page)
-    local bg = paintutils.loadImage("info/HUD_info.nfp")
+    local bg = getBg()
     if not bg then error("HUD_info.nfp not found!") end
     paintutils.drawImage(bg, 1, 1, mon)
 
@@ -227,15 +269,26 @@ local function drawTimer(mon, remaining)
     end
 end
 
--- Однократная отрисовка на конкретном мониторе с использованием буфера
+-- Отрисовка кадра на конкретном мониторе.
+-- Буфер-окно создаётся на каждый кадр (как в рабочем оригинале), HUD
+-- рисуется через term.redirect(buf) — это гарантирует, что nfp-фон
+-- попадает на монитор. Кадр пропускается, если ничего не изменилось
+-- (нет лишних редрау, «моргание» при обновлении убрано).
 local function run(mon, page, totalPages, hives, remaining)
-    -- Создаём буфер размером с экран монитора
+    local sec = math.floor(remaining)
+    local sig = dataSignature(hives, page)
+
+    local prev = lastState[mon]
+    if prev and prev.page == page and prev.total == totalPages and prev.sec == sec and prev.sig == sig then
+        return
+    end
+
     local buf = window.create(mon, 1, 1, mon.getSize())
-    buf.setVisible(false)  -- скрываем отображение до полной отрисовки
+    buf.setVisible(false)
     buf.setBackgroundColor(colors.black)
     buf.clear()
 
-    -- Перенаправляем вывод в буфер
+    -- Перенаправляем вывод в буфер (как в рабочем оригинале — HUD рисуется)
     local oldTerm = term.current()
     term.redirect(buf)
 
@@ -248,6 +301,8 @@ local function run(mon, page, totalPages, hives, remaining)
     term.redirect(oldTerm)
     buf.setVisible(true)
     buf.redraw()
+
+    lastState[mon] = { page = page, total = totalPages, sec = sec, sig = sig }
 end
 
 return { run = run }

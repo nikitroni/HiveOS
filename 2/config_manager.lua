@@ -283,4 +283,44 @@ function ConfigManager.sendInitialConfig(targetId, configData, timeout)
     return true, "Initial config sent"
 end
 
+-- ==================== FREEZE PROTOCOL (for interactive editing) ====================
+-- Used while the user edits a config on HeartOS: the terminal is frozen
+-- (waits with the boot screen), configured, then unfrozen.
+
+--- Freeze a terminal. Expects "frozen".
+function ConfigManager.freezeTerminal(targetId, timeout)
+    local ok, response = ConfigManager.rednetCall(targetId, "freeze", nil, timeout or 3)
+    if not ok then
+        return false, "Freeze failed: " .. tostring(response)
+    end
+    if response ~= "frozen" then
+        return false, "Terminal rejected freeze (response: " .. tostring(response) .. ")"
+    end
+    return true, response
+end
+
+--- Send a config to an already frozen terminal. Expects "config_updated".
+function ConfigManager.sendUpdateConfig(targetId, configData, timeout)
+    local ok, response = ConfigManager.rednetCall(targetId, "update_config", configData, timeout or 5)
+    if not ok then
+        return false, "Config send failed: " .. tostring(response)
+    end
+    if response ~= "config_updated" then
+        return false, "Terminal rejected config (response: " .. tostring(response) .. ")"
+    end
+    return true, response
+end
+
+--- Unfreeze a terminal. Expects "running".
+function ConfigManager.unfreezeTerminal(targetId, timeout)
+    local ok, response = ConfigManager.rednetCall(targetId, "unfreeze", nil, timeout or 3)
+    if not ok then
+        return false, "Unfreeze failed: " .. tostring(response)
+    end
+    if response ~= "running" then
+        return false, "Terminal rejected unfreeze (response: " .. tostring(response) .. ")"
+    end
+    return true, response
+end
+
 return ConfigManager
