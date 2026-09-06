@@ -1,26 +1,25 @@
 -- lab_processor.lua
 -- Улучшение пчёл с компактным логом и правильной проверкой ресурсов.
 
-local config = require("lab_config")
+local lib = require("lab_lib")
 local Utils = require("lab_utils")
-local Genetics = require("lab_genetics")
 
 local Processor = {}
 
--- Параметры из конфига
-local crafters = config.peripherals.crafters
-local incubatorName = config.peripherals.incubator
-local barrelName = config.peripherals.lab_chest
-local indexerName = config.peripherals.bee_indexer
-local resourceChestName = config.peripherals.resource_chest   -- ME интерфейс с honey_treat
-local geneStartSlot = config.processor.gene_start_slot or 3
-local honeyCrafterSlot = config.processor.honey_crafter_slot or 2
-local resultCrafterSlot = config.processor.result_crafter_slot or 11
-local incubatorBeeSlot = config.processor.incubator_bee_slot or 1
-local incubatorGeneSlot = config.processor.incubator_gene_slot or 2
-local incubatorResultSlot = config.processor.incubator_result_slot or 3
-local craftWait = config.processor.craft_wait or 1
-local incubateWait = config.processor.incubate_wait or 5
+-- Параметры из библиотеки лабы
+local crafters = lib.peripherals.crafters
+local incubatorName = lib.peripherals.incubator
+local barrelName = lib.peripherals.lab_chest
+local indexerName = lib.peripherals.bee_indexer
+local resourceChestName = lib.peripherals.resource_chest   -- ME интерфейс с honey_treat
+local geneStartSlot = lib.processor.gene_start_slot or 3
+local honeyCrafterSlot = lib.processor.honey_crafter_slot or 2
+local resultCrafterSlot = lib.processor.result_crafter_slot or 11
+local incubatorBeeSlot = lib.processor.incubator_bee_slot or 1
+local incubatorGeneSlot = lib.processor.incubator_gene_slot or 2
+local incubatorResultSlot = lib.processor.incubator_result_slot or 3
+local craftWait = lib.processor.craft_wait or 1
+local incubateWait = lib.processor.incubate_wait or 5
 
 -- Вспомогательная функция push с защитой от nil
 local function push(src, srcName, dstName, srcSlot, count, dstSlot)
@@ -46,16 +45,16 @@ end
 -- Получить список недостающих генов для пчелы
 local function getMissingGenes(bee)
     local missing = {}
-    if bee.productivity ~= Genetics.ELITE.productivity then table.insert(missing, "productivity") end
-    if bee.endurance ~= Genetics.ELITE.endurance then table.insert(missing, "endurance") end
-    if bee.behavior ~= Genetics.ELITE.behavior then table.insert(missing, "behavior") end
-    if bee.weather_tolerance ~= Genetics.ELITE.weather_tolerance then table.insert(missing, "weather_tolerance") end
+    if bee.productivity ~= lib.ELITE.productivity then table.insert(missing, "productivity") end
+    if bee.endurance ~= lib.ELITE.endurance then table.insert(missing, "endurance") end
+    if bee.behavior ~= lib.ELITE.behavior then table.insert(missing, "behavior") end
+    if bee.weather_tolerance ~= lib.ELITE.weather_tolerance then table.insert(missing, "weather_tolerance") end
     return missing
 end
 
 -- Поиск слота с чистым геном
 function Processor.findGeneSlot(attr)
-    local reader = peripheral.wrap(config.peripherals.reader_indexer)
+    local reader = peripheral.wrap(lib.peripherals.reader_indexer)
     if not reader then return nil end
     local data = reader.getBlockData()
     if not data or not data.inv or not data.inv.Items then return nil end

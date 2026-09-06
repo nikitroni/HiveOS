@@ -3,26 +3,26 @@
 -- Проверяет запасы ресурсов, запускает цикл импульсов, мониторит индексатор.
 -- Принимает callback для вывода лога на экран.
 
-local config = require("lab_config")
+local lib = require("lab_lib")
 local Utils = require("lab_utils")
 
 local GeneProduction = {}
 
--- ==================== ПАРАМЕТРЫ ИЗ КОНФИГА ====================
-local per = config.peripherals
+-- ==================== ПАРАМЕТРЫ ИЗ БИБЛИОТЕКИ ЛАБЫ ====================
+local per = lib.peripherals
 local relayName = per.relay or "redstone_relay_0"
-local relaySides = per.relay_sides or {"front", "top", "back"}
-local pulseDuration = per.relay_pulse_duration or 2
+local relaySides = lib.relay_sides or {"front", "top", "back"}
+local pulseDuration = lib.relay_pulse_duration or 2
 local pauseBetween = 1
-local pauseAfter = per.relay_pause_after or 3
-local targetCount = per.target_gene_count or 64
+local pauseAfter = lib.relay_pause_after or 3
+local targetCount = lib.target_gene_count or 64
 local resourceChestName = per.resource_chest
-local minResources = per.min_resources or 32
-local resourceItems = per.resource_items or {
+local minResources = lib.min_resources or 32
+local resourceItems = lib.resource_items or {
     "minecraft:sunflower",
     "productivebees:honey_treat"
 }
-local chatBoxName = per.chat_box
+local chatBoxName = lib.chat_box
 
 -- ==================== ОТПРАВКА УВЕДОМЛЕНИЙ В ЧАТ ====================
 local function chatMessage(msg, isError)
@@ -94,8 +94,8 @@ function GeneProduction.produceCycle(logCallback)
 
     logCallback(">pulse seq...")
 
-    -- Загружаем параметры цикла из конфига
-    local rc = per.relay_cycle
+    -- Загружаем параметры цикла из библиотеки
+    local rc = lib.relay_cycle
     local phase1_dur = rc.phase1_back_top_duration or 5
     local phase2_delay = rc.phase2_delay or 1
     local phase2_dur = rc.phase2_front_duration or 5

@@ -186,7 +186,10 @@ end
 
 local DEFAULT_TIMEOUT = 5
 
---- Отправить rednet-сообщение и ждать ответа
+--- Отправить rednet-сообщение и ждать ответа ТОЛЬКО от targetId.
+--- Принимаем только СТРОКОВЫЕ ответы (free/frozen/config_updated/running/...).
+--- Табличные сообщения (broadcast-статусы терминалов {type="status",...})
+--- игнорируются и ждём дальше - гарантирует, что busy? не словит чужое.
 --- @param targetId number
 --- @param command string
 --- @param data table|nil
@@ -203,19 +206,24 @@ function ConfigManager.rednetCall(targetId, command, data, timeout)
     end
 
     rednet.send(targetId, msg)
-    local sender, response = rednet.receive(timeout)
-    if not sender then
-        return false, "No response (timeout " .. timeout .. "s)"
+    local deadline = os.clock() + timeout
+    while true do
+        local sender, response = rednet.receive(1)
+        if sender == targetId and type(response) == "string" then
+            return true, response
+        end
+        -- Иначе (чужие или табличные/статус-сообщения) игнорируем и ждём
+        if os.clock() >= deadline then
+            return false, "No response (timeout " .. timeout .. "s)"
+        end
     end
-    if sender ~= targetId then
-        return false, "Response from wrong terminal (ID " .. sender .. ")"
-    end
-    return true, response
 end
 
 -- ==================== REDNET CONFIG PROTOCOL ====================
 
---- Проверить, свободен ли терминал
+--- Проверить, свободен ли терминал (используется редко; основная защита от
+--- редактирования занятого терминала - в freezeTerminal, который получает
+--- "wait"/не-"frozen" если терминал занят).
 function ConfigManager.checkTerminalBusy(targetId, timeout)
     local ok, response = ConfigManager.rednetCall(targetId, "busy?", nil, timeout or 3)
     if not ok then

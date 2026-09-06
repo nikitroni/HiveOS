@@ -1,9 +1,8 @@
 -- lab_hud.lua
 -- Отрисовка основного лабораторного монитора (71x26) поверх .nfp фона.
 
-local config = require("lab_config")
+local lib = require("lab_lib")
 local Utils = require("lab_utils")
-local Genetics = require("lab_genetics")
 local Anim = require("lab_animations")
 local paintutils = _G.paintutils
 local staticDrawn = false
@@ -15,13 +14,24 @@ local function stripColorCodes(str)
     return str:gsub("§.", "")
 end
 
-local MAIN_MONITOR = peripheral.wrap(config.peripherals.main_monitor)
-if not MAIN_MONITOR then error("Main monitor not found!") end
-MAIN_MONITOR.setTextScale(1.0)
+-- Главный монитор резолвится ЛЕНИВО (только когда периферия уже настроена
+-- конфигом от HeartOS): при старте конфига может ещё не быть, и мы ждём
+-- его в консоли, не трогая мониторы.
+local MAIN_MONITOR = nil
+local function getMainMonitor()
+    if not MAIN_MONITOR then
+        local mon = peripheral.wrap(lib.peripherals.main_monitor)
+        if mon then
+            mon.setTextScale(1.0)
+            MAIN_MONITOR = mon
+        end
+    end
+    return MAIN_MONITOR
+end
 
 local background = nil
-if config.peripherals.bg_file and fs.exists(config.peripherals.bg_file) then
-    background = paintutils.loadImage(config.peripherals.bg_file)
+if lib.bg_file and fs.exists(lib.bg_file) then
+    background = paintutils.loadImage(lib.bg_file)
 else
     print("Background file not found. Using black background.")
 end
@@ -48,7 +58,7 @@ local GENE_LEVELS = {
 
 -- ==================== ЛЕВАЯ ПАНЕЛЬ (ГЕНЫ В ИНДЕКСЕРЕ) ====================
 function HUD.drawGeneIndexer(mon, geneCounts)
-    local panel = config.gene_indexer_panel
+    local panel = lib.gene_indexer_panel
     local baseX = panel.start_x
     local baseY = panel.start_y
     drawPanelTitle(mon, panel)
@@ -77,7 +87,7 @@ end
 
 -- ==================== ПРАВАЯ ПАНЕЛЬ (ПОТРЕБНОСТИ) ====================
 function HUD.drawBeeGenetics(mon, neededCounts)
-    local panel = config.bee_genetics_panel
+    local panel = lib.bee_genetics_panel
     local baseX = panel.start_x
     local baseY = panel.start_y
     drawPanelTitle(mon, panel)
@@ -108,7 +118,7 @@ end
 
 -- ==================== КАРТОЧКИ ПЧЁЛ (внизу) ====================
 function HUD.drawBeeCards(mon, bees)
-    local grid = config.bee_grid
+    local grid = lib.bee_grid
     for i = 1, 5 do
         local baseX = grid.start_x + (i-1) * grid.offset_x
         local baseY = grid.start_y
@@ -118,13 +128,13 @@ function HUD.drawBeeCards(mon, bees)
         mon.setBackgroundColor(colors.gray)
         mon.setCursorPos(baseX + off.title.x, baseY + off.title.y)
         if bee then
-            local beeName = Genetics.formatBeeName(bee.type) or "Unknown"
+            local beeName = lib.formatBeeName(bee.type) or "Unknown"
             if #beeName > 10 then beeName = beeName:sub(1,10) end
             mon.setTextColor(colors.white)
             mon.write(string.format("%s#%d", beeName, i))
         else
             mon.setTextColor(colors.red)
-            mon.write(config.labels.no_bee)
+            mon.write(lib.labels.no_bee)
         end
 
         if bee then
@@ -137,7 +147,7 @@ function HUD.drawBeeCards(mon, bees)
                 local level = value:match("%.(.+)$") or value
                 -- Первая буква заглавная
                 level = level:gsub("^%l", string.upper)
-                local color = Genetics.getGeneLevelColor(name, value) or colors.white
+                local color = lib.getGeneLevelColor(name, value) or colors.white
                 mon.setCursorPos(baseX + xVal, baseY + yVal)
                 mon.setTextColor(color)
                 mon.write(level)
@@ -161,7 +171,7 @@ end
 
 -- ==================== ОБЛАСТЬ ЛОГА ====================
 function HUD.drawLogArea(mon, mode, logLines, frame)
-    local area = config.log_area
+    local area = lib.log_area
     local baseX = area.start_x
     local baseY = area.start_y
 
@@ -197,34 +207,68 @@ end
 
 -- ==================== ДНК-ЦЕПОЧКИ ====================
 function HUD.drawDNA(mon, frame)
-    local dna = config.dna
+    local dna = lib.dna
     Anim.drawDNA(mon, dna.left_start_x, dna.start_y, dna.height, frame, false)
     Anim.drawDNA(mon, dna.right_start_x, dna.start_y, dna.height, frame, true)
 end
 
--- ==================== ПОЛНАЯ ОТРИСОВКА ====================
-function HUD.drawAll(bees, geneCounts, neededCounts, mode, logLines, frame)
-    local mon = MAIN_MONITOR
-    local oldTerm = term.redirect(mon)
+-- ==================== ПОСТОЯННЫЙ БУФЕР ГЛАВНОГО МОНИТОРА ====================
+-- Создаётся один раз; каждый кадр рисуем в скрытое окно и выводим одним
+-- redraw(). Между кадрами монитор держит предыдущий кадр (без мигания).
+local staticBuffer = nil
+local staticBufferMon = nil
+local function getBuffer(mon)
+    if not staticBuffer or staticBufferMon ~= mon then
+        staticBuffer = window.create(mon, 1, 1, mon.getSize())
+        staticBufferMon = mon
+        staticBuffer.setVisible(false)
+    end
+    return staticBuffer
+end
 
-    -- Рисуем фон каждый кадр (стирает предыдущее)
+-- ==================== ПОЛНАЯ ОТРИСОВКА ====================
+-- Всё рисуется в скрытый буфер, затем одним redraw() атомарно на монитор.
+function HUD.drawAll(bees, geneCounts, neededCounts, mode, logLines, frame, status)
+    local mon = getMainMonitor()
+    if not mon then return end   -- периферия ещё не настроена, ждём конфиг
+
+    local win = getBuffer(mon)
+    win.setVisible(false)
+    win.setBackgroundColor(colors.black)
+    win.clear()
+
+    local oldTerm = term.redirect(win)
+
+    -- Рисуем фон в буфер
     if background then
-        paintutils.drawImage(background, 1, 1, mon)
+        paintutils.drawImage(background, 1, 1, win)
     else
-        mon.setBackgroundColor(colors.black)
-        mon.clear()
+        win.setBackgroundColor(colors.black)
+        win.clear()
     end
 
     -- ДНК (анимация)
-    HUD.drawDNA(mon, frame)
+    HUD.drawDNA(win, frame)
 
     -- Динамические элементы
-    HUD.drawGeneIndexer(mon, geneCounts)
-    HUD.drawBeeGenetics(mon, neededCounts)
-    HUD.drawBeeCards(mon, bees)
-    HUD.drawLogArea(mon, mode, logLines, frame)
+    HUD.drawGeneIndexer(win, geneCounts)
+    HUD.drawBeeGenetics(win, neededCounts)
+    HUD.drawBeeCards(win, bees)
+    HUD.drawLogArea(win, mode, logLines, frame)
+
+    -- Индикатор статуса (BUSY - терминал занят задачей)
+    if status then
+        win.setCursorPos(1, 1)
+        win.setTextColor(status == "busy" and colors.red or colors.green)
+        win.setBackgroundColor(colors.black)
+        win.write(status == "busy" and "BUSY" or "free")
+    end
 
     term.redirect(oldTerm)
+
+    -- Атомарный вывод всего кадра
+    win.setVisible(true)
+    win.redraw()
 end
 
 return HUD

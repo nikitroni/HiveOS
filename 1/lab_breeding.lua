@@ -1,17 +1,17 @@
 -- lab_breeding.lua
 -- Модуль для размножения пчёл по запросу из чата.
--- Использует конфиг для имён периферий.
+-- Использует библиотеку lab_lib (периферия из HeartOS-конфига через адаптер).
 
-local config = require("lab_config")
+local lib = require("lab_lib")
 
 local Breeding = {}
 
--- Цветок (можно вынести в конфиг)
+-- Цветок (можно вынести в библиотеку)
 local FLOWER = "minecraft:sunflower"
 
 -- ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 local function chatMessage(msg)
-    local chat = peripheral.wrap(config.peripherals.chat_box)
+    local chat = peripheral.wrap(lib.chat_box)
     if chat then
         chat.sendMessage(msg)
     else
@@ -23,11 +23,11 @@ end
 function Breeding.run(logCallback)
     logCallback = logCallback or function() end
 
-    -- Получаем имена из конфига
-    local labChestName = config.peripherals.lab_chest
-    local cageChestName = config.peripherals.cage_chest
-    local resourceChestName = config.peripherals.resource_chest
-    local chamberName = config.peripherals.breeding_chamber
+    -- Получаем имена из библиотеки (периферия из конфига HeartOS)
+    local labChestName = lib.peripherals.lab_chest
+    local cageChestName = lib.peripherals.cage_chest
+    local resourceChestName = lib.peripherals.resource_chest
+    local chamberName = lib.peripherals.breeding_chamber
 
     if not chamberName then
         logCallback("ERROR: breeding_chamber not defined in config")
@@ -48,16 +48,25 @@ function Breeding.run(logCallback)
     logCallback("Breeding process started. Waiting for command...")
     chatMessage("Breeding: Enter number of bees (e.g., 4)")
 
-    -- Ожидаем ввод через обычный игровой чат
+    -- Ожидаем ввод через обычный игровой чат (с таймаутом, чтобы не висеть
+    -- вечно и не держать статус busy)
     local count = nil
+    local deadline = os.clock() + 60
     while true do
-        local event, username, message = os.pullEvent("chat")
-        local num = tonumber(message)
-        if num and num > 0 then
-            count = num
-            break
-        else
-            chatMessage("Invalid number, try again:")
+        local ok, evt, username, chatMsg = pcall(os.pullEventTimeout, 1, "chat")
+        if not ok or os.clock() >= deadline then
+            chatMessage("Breeding timeout - no input, aborted.")
+            logCallback("ERROR: breeding input timeout")
+            return false
+        end
+        if evt == "chat" and chatMsg then
+            local num = tonumber(chatMsg)
+            if num and num > 0 then
+                count = num
+                break
+            else
+                chatMessage("Invalid number, try again:")
+            end
         end
     end
 

@@ -16,9 +16,10 @@ local COLORS = MonitorUtil.COLORS
 
 local CONFIG_FILE = "labos_config.lua"
 
---- Send config to LabOS via rednet
-local function trySendConfig(mon, heartConfig, startY)
-    local targetId = heartConfig.labos_id or 2
+--- Send config to LabOS via rednet. Если терминал был заморожен (frozen=true) —
+--- использовать update_config + unfreeze. Иначе — старый request_config.
+local function trySendConfig(mon, heartConfig, startY, targetId, frozen)
+    targetId = targetId or heartConfig.labos_id or 2
     local config, _ = ConfigManager.loadFromFile(CONFIG_FILE)
 
     if not config then
@@ -26,14 +27,43 @@ local function trySendConfig(mon, heartConfig, startY)
         return
     end
 
-    local ok, msg = ConfigManager.sendInitialConfig(targetId, config)
-    if ok then
-        ChatUtil.sendSuccess("Config sent to LabOS!")
-        MonitorUtil.drawText(mon, 2, startY, "Sent to LabOS!", COLORS.success)
+    local ok, msg
+    if frozen then
+        ok, msg = ConfigManager.sendUpdateConfig(targetId, config)
+        ConfigManager.unfreezeTerminal(targetId)  -- best effort: размораживаем в любом случае
+        if ok then
+            ChatUtil.sendSuccess("Config sent to LabOS!")
+            MonitorUtil.drawText(mon, 2, startY, "Sent to LabOS!", COLORS.success)
+        else
+            ChatUtil.sendError("Send failed: " .. msg)
+            MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
+        end
     else
-        ChatUtil.sendError("Send failed: " .. msg)
-        MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
+        ok, msg = ConfigManager.sendInitialConfig(targetId, config)
+        if ok then
+            ChatUtil.sendSuccess("Config sent to LabOS!")
+            MonitorUtil.drawText(mon, 2, startY, "Sent to LabOS!", COLORS.success)
+        else
+            ChatUtil.sendError("Send failed: " .. msg)
+            MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
+        end
     end
+end
+
+--- Заморозить LabOS перед редактированием.
+--- Защита от редактирования занятого терминала встроена в freeze:
+--- если терминал занят задачей, он ответит "wait" (не "frozen") и мастер
+--- не откроется. При свободном терминале - freeze успешен.
+--- Возвращает targetId, ok.
+local function freezeForEdit(heartConfig)
+    local targetId = heartConfig.labos_id or 2
+
+    local ok, err = ConfigManager.freezeTerminal(targetId)
+    if not ok then
+        ChatUtil.sendError("LabOS " .. tostring(err) .. " (id=" .. tostring(targetId) .. ")")
+        return nil, false
+    end
+    return targetId, true
 end
 
 --- Получить цвет для группы по индексу (циклически)
@@ -97,6 +127,13 @@ local function editLabOSConfig(mon, heartConfig)
         end
     end
 
+    -- Замораживаем LabOS на время редактирования
+    -- (если терминал занят - freezeForEdit вернёт nil и мастер не запускаем)
+    local targetId, frozen = freezeForEdit(heartConfig)
+    if not targetId then
+        return
+    end
+
     local result = ConfigWizard.editByKeys(
         deviceTypes,
         mon,
@@ -111,16 +148,21 @@ local function editLabOSConfig(mon, heartConfig)
             newConfig.peripherals = updatedDevices
             ConfigManager.saveConfig(newConfig, CONFIG_FILE)
             ChatUtil.sendSuccess("LabOS config updated!")
-            trySendConfig(mon, heartConfig, 10)
+            trySendConfig(mon, heartConfig, 10, targetId, frozen)
         end
     )
 
     if result == nil then
         ChatUtil.sendError("Edit cancelled.")
+        if frozen then
+            ConfigManager.unfreezeTerminal(targetId)
+        end
     end
 end
 
---- Create new config
+--- Create new config (devices only).
+--- Ограничение: ходового мастера runWizard больше нет — новый конфиг собирается
+--- через тот же editByKeys (пустой стартовый конфиг).
 local function createLabOSConfig(mon, heartConfig)
     if not ChatUtil.isAvailable() then
         ChatUtil.init(nil)
@@ -133,12 +175,26 @@ local function createLabOSConfig(mon, heartConfig)
         end
     end
 
-    local result = ConfigWizard.runWizard(deviceTypes, mon, heartConfig.main_monitor, "LabOS", function(devices)
-        local config = ConfigManager.createConfig(devices)
-        ConfigManager.saveConfig(config, CONFIG_FILE)
-        ChatUtil.sendSuccess("LabOS config saved!")
-        trySendConfig(mon, heartConfig, 10)
-    end)
+    -- Замораживаем LabOS на время создания конфига
+    -- (если терминал занят - freezeForEdit вернёт nil и мастер не запускаем)
+    local targetId, frozen = freezeForEdit(heartConfig)
+    if not targetId then
+        return
+    end
+
+    local result = ConfigWizard.editByKeys(
+        deviceTypes,
+        mon,
+        heartConfig.main_monitor,
+        "LabOS (Create)",
+        {},
+        function(devices)
+            local config = ConfigManager.createConfig(devices)
+            ConfigManager.saveConfig(config, CONFIG_FILE)
+            ChatUtil.sendSuccess("LabOS config saved!")
+            trySendConfig(mon, heartConfig, 10, targetId, frozen)
+        end
+    )
 
     if result == nil then
         ChatUtil.sendError("Configuration cancelled.")

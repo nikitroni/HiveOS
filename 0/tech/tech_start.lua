@@ -55,7 +55,7 @@ local function drawListCell(mon, hive, baseX, baseY)
             mon.setBackgroundColor(BG_LIST)
             mon.setCursorPos(baseX + off.bee_name.x, baseY + off.bee_name.y)
             mon.setTextColor(labels.colors.empty)
-            mon.write("WARNING")
+            mon.write("   WARNING")
         end
     else
         mon.setBackgroundColor(BG_LIST)

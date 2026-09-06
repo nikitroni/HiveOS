@@ -78,8 +78,8 @@ return {
         group = "labos",
     },
     {
-        key = "bee_produce",
-        label = "Bee Produce Button Monitor",
+        key = "gene_produce",
+        label = "Gene Produce Button Monitor",
         checkMethods = {"write", "setCursorPos"},
         max = 1,
         group = "labos",

@@ -2,7 +2,7 @@
 -- Вспомогательные функции для лабораторного терминала.
 -- Чтение данных из бочки и индексера, анализ генов пчёл.
 
-local config = require("lab_config")
+local lib = require("lab_lib")
 
 local Utils = {}
 
@@ -18,7 +18,7 @@ local GENE_ATTRIBUTES = { "productivity", "endurance", "behavior", "weather_tole
 
 -- ==================== ЧТЕНИЕ ПЧЁЛ ИЗ БОЧКИ ====================
 function Utils.getBeesFromBarrel()
-    local reader = peripheral.wrap(config.peripherals.reader_bee)
+    local reader = peripheral.wrap(lib.peripherals.reader_bee)
     if not reader then error("Reader for barrel not found") end
 
     local data = reader.getBlockData()
@@ -56,7 +56,7 @@ end
 
 -- ==================== ЧТЕНИЕ ГЕНОВ ИЗ ИНДЕКСЕРА ====================
 function Utils.getGeneCountsFromIndexer()
-    local reader = peripheral.wrap(config.peripherals.reader_indexer)
+    local reader = peripheral.wrap(lib.peripherals.reader_indexer)
     if not reader then error("Reader for indexer not found") end
 
     local data = reader.getBlockData()

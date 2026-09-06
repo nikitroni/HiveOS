@@ -50,14 +50,20 @@ local function trySendConfig(mon, heartConfig, startY, targetId, frozen)
     end
 end
 
---- Заморозить BeeOS перед редактированием, чтобы он ждал с экраном загрузки
+--- Заморозить BeeOS перед редактированием.
+--- Защита от редактирования занятого терминала встроена в freeze:
+--- если терминал занят задачей, он ответит "wait" (не "frozen") и мастер
+--- не откроется. При свободном терминале - freeze успешен.
+--- Возвращает targetId, ok.
 local function freezeForEdit(heartConfig)
     local targetId = heartConfig.beeos_id or 1
+
     local ok, err = ConfigManager.freezeTerminal(targetId)
     if not ok then
-        ChatUtil.sendError("BeeOS freeze failed (will try to send anyway): " .. tostring(err))
+        ChatUtil.sendError("BeeOS " .. tostring(err) .. " (id=" .. tostring(targetId) .. ")")
+        return nil, false
     end
-    return targetId, ok
+    return targetId, true
 end
 
 --- Получить цвет для группы по индексу (циклически)
@@ -122,7 +128,11 @@ local function editBeeOSConfig(mon, heartConfig)
     end
 
     -- Замораживаем BeeOS на время редактирования
+    -- (если терминал занят - freezeForEdit вернёт nil и мастер не запускаем)
     local targetId, frozen = freezeForEdit(heartConfig)
+    if not targetId then
+        return
+    end
 
     local result = ConfigWizard.editByKeys(
         deviceTypes,
@@ -167,7 +177,11 @@ local function createBeeOSConfig(mon, heartConfig)
     end
 
     -- Замораживаем BeeOS на время создания конфига
+    -- (если терминал занят - freezeForEdit вернёт nil и мастер не запускаем)
     local targetId, frozen = freezeForEdit(heartConfig)
+    if not targetId then
+        return
+    end
 
     local result = ConfigWizard.editByKeys(
         deviceTypes,

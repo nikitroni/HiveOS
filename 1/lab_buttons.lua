@@ -1,23 +1,40 @@
 -- lab_buttons.lua
 -- Модуль для управления 4 мониторами-кнопками.
 -- Каждая кнопка имеет свой монитор, анимируется независимо и обрабатывает нажатия.
+-- Мониторы резолвятся ЛЕНИВО (когда периферия уже настроена конфигом от HeartOS).
 
-local config = require("lab_config")
+local lib = require("lab_lib")
 local Buttons = {}
 
-local monitors = {
-    bee_out = peripheral.wrap(config.peripherals.button_monitors.bee_out),
-    gene_upgrade = peripheral.wrap(config.peripherals.button_monitors.gene_upgrade),
-    bee_produce = peripheral.wrap(config.peripherals.button_monitors.bee_produce),
-    breed = peripheral.wrap(config.peripherals.button_monitors.breed),
-}
+-- Инициализируется при первом использовании (после прихода конфига)
+local monitors = nil
+local function getMonitors()
+    if not monitors then
+        monitors = {}
 
-for name, mon in pairs(monitors) do
-    if not mon then
-        error("Monitor for button " .. name .. " not found!")
+        -- Безопасный wrap: если имя в конфиге отсутствует (nil), пропускаем.
+        local function wname(name)
+            if type(name) ~= "string" or name == "" then
+                return nil
+            end
+            return peripheral.wrap(name)
+        end
+
+        local bm = lib.peripherals.button_monitors or {}
+        monitors.bee_out = wname(bm.bee_out)
+        monitors.gene_upgrade = wname(bm.gene_upgrade)
+        monitors.gene_produce = wname(bm.gene_produce)
+        monitors.breed = wname(bm.breed)
+
+        for name, mon in pairs(monitors) do
+            if mon then mon.setTextScale(0.5) end
+        end
     end
-    mon.setTextScale(0.5)
+    return monitors
 end
+
+-- Постоянные буферы кнопок (одни на модуль, не пересоздаются на кадр)
+local buffers = {}
 
 local function rect(mon, x, y, w, h, color)
     mon.setBackgroundColor(color)
@@ -104,37 +121,140 @@ local function drawGeneUpgradeButton(mon, frame)
     mon.write("SEQ:" .. lastCode)
 end
 
--- Кнопка BEE (производство генов)
-local function drawBeeProduceButton(mon, frame)
+-- Кнопка GENE PRODUCTION (две анимированные пробирки, несинхронные цвета)
+local function drawGeneProduceButton(mon, frame)
     mon.setBackgroundColor(colors.black)
     mon.clear()
 
+    -- Локальная WriteAt (пишет в монитор/буфер)
+    local function writeAt(x, y, ch, fg, bg)
+        mon.setCursorPos(x, y)
+        mon.setTextColor(fg)
+        mon.setBackgroundColor(bg)
+        mon.write(ch)
+    end
+
+    -- Заголовок (x=1)
     mon.setTextColor(colors.white)
-    mon.setCursorPos(5, 1)
-    mon.write("BEE CHECK")
-    -- Плавное покачивание всей пчелы
-    local offset = math.sin(frame * 0.2) * 1
-    local x, y = 3, 6 + offset
+    mon.setCursorPos(1, 1)
+    mon.write("GENE PRODUCTION")
 
-    -- Крылья (меняют положение)
-    local wingShift = (math.floor(frame * 3) % 2 == 0) and 0 or 1
-    -- Левое крыло
-    rect(mon, x + 2, y - 2 + wingShift, 2, 2, colors.lightGray)
-    -- Правое крыло
-    rect(mon, x + 5, y - 2 + wingShift, 2, 2, colors.lightGray)
+    -- ===== Геометрия пробирки (5 колонок) =====
+    -- опущены на 2 строки ниже (rimY: 2->4)
+    local rimY = 4
+    local wallY1 = 5
+    local wallY2 = 9
+    local bottomY = 10
 
-    -- Тело
-    rect(mon, x, y, 2, 2, colors.yellow) -- Голова
-    rect(mon, x + 2, y, 2, 2, colors.black)  -- Полоса 1
-    rect(mon, x + 4, y, 2, 2, colors.yellow) -- Полоса 2
-    rect(mon, x + 6, y, 2, 2, colors.black)  -- Полоса 3
-    rect(mon, x + 8, y + 1, 1, 1, colors.gray) -- Жало
+    -- Рисует одну пробирку с центром в cx (левая стенка) и своим уровнем.
+    -- bubble = { x = 0..2 (смещение внутрь), y = absolute } рисуется
+    -- строго внутри жидкости (bg = color жидкости, fg = white).
+    local function drawTube(cx, color, liquidTopY, bubble)
+        cx = cx or 0
+        -- Жидкость (снизу вверх, внутри стенок x=cx+1..cx+3)
+        for y = wallY2, liquidTopY, -1 do
+            for col = cx + 1, cx + 3 do
+                writeAt(col, y, " ", color, color)
+            end
+        end
 
-    -- Глаз
-    mon.setCursorPos(x, y)
-    mon.setBackgroundColor(colors.white)
-    mon.write(" ")
+        -- Пузырёк: x = cx+1+off (только внутри жидкости), bg = цвет жидкости
+        if bubble then
+            local bx = cx + 1 + bubble.off
+            local by = bubble.y
+            if by >= liquidTopY and by <= wallY2 then
+                writeAt(bx, by, "o", colors.white, color)
+            end
+        end
+
+        -- Стенки
+        for y = wallY1, wallY2 do
+            writeAt(cx, y, "|", colors.gray, colors.black)
+            writeAt(cx + 4, y, "|", colors.gray, colors.black)
+        end
+
+        -- Горлышко
+        writeAt(cx, rimY, "/", colors.gray, colors.black)
+        writeAt(cx + 1, rimY, "-", colors.gray, colors.black)
+        writeAt(cx + 2, rimY, "-", colors.gray, colors.black)
+        writeAt(cx + 3, rimY, "-", colors.gray, colors.black)
+        writeAt(cx + 4, rimY, "\\", colors.gray, colors.black)
+
+        -- Дно
+        writeAt(cx, bottomY, "\\", colors.gray, colors.black)
+        writeAt(cx + 1, bottomY, "-", colors.gray, colors.black)
+        writeAt(cx + 2, bottomY, "-", colors.gray, colors.black)
+        writeAt(cx + 3, bottomY, "-", colors.gray, colors.black)
+        writeAt(cx + 4, bottomY, "/", colors.gray, colors.black)
+    end
+
+    -- ===== Две пробирки, несинхронные, ускоренная анимация =====
+    local liquidColors = { colors.green, colors.blue, colors.red, colors.orange, colors.pink }
+
+    -- Пробирка 1
+    local c1 = liquidColors[math.floor(frame / 30) % #liquidColors + 1]
+    local lvl1 = 2 + math.floor((math.sin(frame * 0.1) + 1) * 1.5)
+    if lvl1 < 1 then lvl1 = 1 end
+    if lvl1 > 4 then lvl1 = 4 end
+    local top1 = wallY2 - (lvl1 - 1)
+    -- Пузырёк 1: off 0..2, поднимается
+    local b1 = {
+        off = (math.floor(frame / 10)) % 3,
+        y = wallY2 - math.floor((frame * 0.35) % 5),
+    }
+
+    -- Пробирка 2 (своя фаза)
+    local c2 = liquidColors[(math.floor((frame + 45) / 30) + 2) % #liquidColors + 1]
+    local lvl2 = 2 + math.floor((math.sin((frame + 3.1) * 0.08) + 1) * 1.5)
+    if lvl2 < 1 then lvl2 = 1 end
+    if lvl2 > 4 then lvl2 = 4 end
+    local top2 = wallY2 - (lvl2 - 1)
+    -- Пузырёк 2: своя фаза (другой темп/оффсет) - ВТОРАЯ пробирка тоже с пузырьком
+    local b2 = {
+        off = (math.floor(frame / 7) + 1) % 3,
+        y = wallY2 - math.floor(((frame + 2) * 0.27) % 5),
+    }
+
+    -- Центрируем: 2×(5 колонок) + отступ 3 = 13 колонок
+    local totalW = 13
+    local w, _ = mon.getSize()
+    local startX = math.floor((w - totalW) / 2)
+    if startX < 1 then startX = 1 end
+
+    -- Левая на 1 правее, правая ещё +9 (итого отступ 3 между ними)
+    drawTube(startX + 1, c1, top1, b1)
+    drawTube(startX + 9, c2, top2, b2)
 end
+-- local function drawBeeProduceButton(mon, frame)
+--     mon.setBackgroundColor(colors.black)
+--     mon.clear()
+
+--     mon.setTextColor(colors.white)
+--     mon.setCursorPos(5, 1)
+--     mon.write("GENE CHECK")
+--     -- Плавное покачивание всей пчелы
+--     local offset = math.sin(frame * 0.2) * 1
+--     local x, y = 3, 6 + offset
+
+--     -- Крылья (меняют положение)
+--     local wingShift = (math.floor(frame * 3) % 2 == 0) and 0 or 1
+--     -- Левое крыло
+--     rect(mon, x + 2, y - 2 + wingShift, 2, 2, colors.lightGray)
+--     -- Правое крыло
+--     rect(mon, x + 5, y - 2 + wingShift, 2, 2, colors.lightGray)
+
+--     -- Тело
+--     rect(mon, x, y, 2, 2, colors.yellow) -- Голова
+--     rect(mon, x + 2, y, 2, 2, colors.black)  -- Полоса 1
+--     rect(mon, x + 4, y, 2, 2, colors.yellow) -- Полоса 2
+--     rect(mon, x + 6, y, 2, 2, colors.black)  -- Полоса 3
+--     rect(mon, x + 8, y + 1, 1, 1, colors.gray) -- Жало
+
+--     -- Глаз
+--     mon.setCursorPos(x, y)
+--     mon.setBackgroundColor(colors.white)
+--     mon.write(" ")
+-- end
 
 -- Кнопка BREED – цветок, капля и летающие пчелодетки (замедленная)
 local function drawBreedButton(mon, frame)
@@ -185,10 +305,34 @@ local function drawBreedButton(mon, frame)
 end
 
 function Buttons.drawAll(frame)
-    drawBeeOutButton(monitors.bee_out, frame)
-    drawGeneUpgradeButton(monitors.gene_upgrade, frame)
-    drawBeeProduceButton(monitors.bee_produce, frame)
-    drawBreedButton(monitors.breed, frame)
+    local mons = getMonitors()
+
+    -- Постоянные буферы: создаются один раз на каждый монитор, затем
+    -- переиспользуются (не создаём окно на каждый кадр -> нет моргания).
+    local function drawWithBuffer(name, buttonMon, drawFn)
+        if not buttonMon then return end
+
+        local buf = buffers[name]
+        if not buf then
+            buf = window.create(buttonMon, 1, 1, buttonMon.getSize())
+            buf.setVisible(false)
+            buffers[name] = buf
+        end
+
+        buf.setVisible(false)
+        buf.setBackgroundColor(colors.black)
+        buf.clear()
+        term.redirect(buf)
+        drawFn(buf, frame)
+        term.redirect(buttonMon)
+        buf.setVisible(true)
+        buf.redraw()
+    end
+
+    drawWithBuffer("bee_out", mons.bee_out, drawBeeOutButton)
+    drawWithBuffer("gene_upgrade", mons.gene_upgrade, drawGeneUpgradeButton)
+    drawWithBuffer("gene_produce", mons.gene_produce, drawGeneProduceButton)
+    drawWithBuffer("breed", mons.breed, drawBreedButton)
 end
 
 local callbacks = {}
@@ -198,9 +342,10 @@ function Buttons.setCallbacks(cb)
 end
 
 function Buttons.handleTouch(side, x, y)
+    local mons = getMonitors()
     local monName = nil
-    for name, mon in pairs(monitors) do
-        if peripheral.getName(mon) == side then
+    for name, mon in pairs(mons) do
+        if mon and peripheral.getName(mon) == side then
             monName = name
             break
         end
@@ -211,8 +356,12 @@ function Buttons.handleTouch(side, x, y)
         callbacks.onBeeOut()
     elseif monName == "gene_upgrade" and callbacks.onGeneUpgrade then
         callbacks.onGeneUpgrade()
-    elseif monName == "bee_produce" and callbacks.onBeeProduce then
-        callbacks.onBeeProduce()
+    elseif monName == "gene_produce" and (callbacks.onGeneProduce or callbacks.onBeeProduce) then
+        if callbacks.onGeneProduce then
+            callbacks.onGeneProduce()
+        else
+            callbacks.onBeeProduce()
+        end
     elseif monName == "breed" and callbacks.onBreed then
         callbacks.onBreed()
     end
