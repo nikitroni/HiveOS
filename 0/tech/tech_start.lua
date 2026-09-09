@@ -12,6 +12,17 @@ local mode = "list"
 local currentPage = 1
 local selectedHiveIndex = 1
 
+-- Опции запуска (устанавливаются в run; handleClick использует их, напр. sendToLab)
+local sharedOpts = nil
+
+-- Таймерные счётчики (модульные, доступны и processTick, и run)
+local lastUpdateTime = os.clock()
+local updateInterval = 5
+local timerTicks = 0
+
+-- Время последнего клика (debounce двойных touch-событий)
+local lastTouchTime = 0
+
 -- Цвета фона
 local BG_LIST = colors.lightGray
 local BG_DETAIL_DARK = colors.black
@@ -365,9 +376,18 @@ local function handleClick(mon, x, y)
     if hive then
                 local hiveBlockName = hive.hiveBlock   -- это строка из конфига
         if hiveBlockName then
-            LabManager.sendBees(selectedHiveIndex, hive.data, hiveBlockName)
+            -- Неблокирующая отправка: startSend начинает state-машину,
+            -- завершение идёт по таймеру через sendTick.
+            if sharedOpts and sharedOpts.sendToLab then
+                sharedOpts.sendToLab(selectedHiveIndex, hive.data, hiveBlockName)
+                Logger.log("LAB: send started (non-blocking) for hive " .. selectedHiveIndex)
+            else
+                -- Fallback: синхронный запуск без таймера (не должен случиться)
+                LabManager.startSend(selectedHiveIndex, hive.data, hiveBlockName)
+                Logger.log("LAB: send (no tick available) for hive " .. selectedHiveIndex)
+            end
         else
-            log("LAB: hiveBlockName is nil for hive " .. selectedHiveIndex)
+            Logger.log("LAB: hiveBlockName is nil for hive " .. selectedHiveIndex)
         end
     end
         elseif x >= s.back_button.x1 and x <= s.back_button.x2 and y >= s.back_button.y1 and y <= s.back_button.y2 then
@@ -389,86 +409,104 @@ end
 
 -- ====================== ОСНОВНОЙ ЦИКЛ ======================
 
+-- Один тик (только heartbeat + данные + watchdog, БЕЗ info/sendTick)
+local dataBusy = false
+local function processTick(mon, opts, now)
+    timerTicks = (timerTicks or 0) + 1
+    if timerTicks % 10 == 0 then
+        Logger.log("TECH heartbeat tick " .. timerTicks)
+    end
+
+    -- Watchdog: если отправка зависла >60с — сброс
+    LabManager.abortStuckSend()
+
+    -- Асинхронный запрос данных (воркер HiveReader.worker живёт отдельно)
+    if now - lastUpdateTime >= updateInterval and not dataBusy and not LabManager.isSending() then
+        dataBusy = true
+        HiveReader.requestUpdate()
+    end
+end
+
 local function run(mon, opts)
     opts = opts or {}
+    sharedOpts = opts
+    LabManager.reset()
+
     local oldTerm = term.redirect(mon)
     mon.setTextScale(1.0)
 
-    HiveReader.updateIfNeeded()
+    local function exitRun(res)
+        term.redirect(oldTerm)
+        sharedOpts = nil
+        return res
+    end
 
-    -- После перезагрузки конфига выбранный улей может исчезнуть
+    local function redrawCurrent()
+        if mode == "list" then drawList(mon)
+        else drawDetail(mon, HiveReader.getHives()[selectedHiveIndex]) end
+    end
+
     if mode == "detail" and (selectedHiveIndex < 1 or selectedHiveIndex > HiveReader.count()) then
         mode = "list"
     end
 
-    if mode == "list" then
-        drawList(mon)
-    else
-        drawDetail(mon, HiveReader.getHives()[selectedHiveIndex])
-    end
+    -- Первый кадр сразу
+    local okFirst = pcall(redrawCurrent)
+    if not okFirst then Logger.log("TECH: initial draw failed") end
+    HiveReader.requestUpdate()
 
-    -- Переменные для периодического обновления данных
-    local lastUpdateTime = os.clock()
-    local updateInterval = 5  -- секунд
-    local timer = os.startTimer(0.2)  -- маленький таймер для частого переключения контекста
+    local lastTickTime = os.clock()
+    local tickTimer = os.startTimer(0.1)
 
+    -- Простой loop без parallel: parallel-оркестрация в BeeOs.runScreens
     while true do
         local event, p1, p2, p3 = os.pullEvent()
-        
-        if event == "monitor_touch" and p1 == peripheral.getName(mon) then
-            handleClick(mon, p2, p3)
+        tickTimer = os.startTimer(0.1)
+        local now = os.clock()
 
-        elseif event == "rednet_message" then
-            local senderId, message, protocol = p1, p2, p3
-            print("DEBUG: rednet_message from " .. senderId .. ": " .. textutils.serialize(message))
-            if opts.rednetHandler then
-                local action = opts.rednetHandler(senderId, message)
-                if action == "reload" or action == "freeze" then
-                    return action
+        local ok, err = pcall(function()
+            if event == "timer" and p1 == tickTimer then
+                if now - lastTickTime >= 0.1 then
+                    lastTickTime = now
+                    local okT = pcall(processTick, mon, opts, now)
+                    if not okT then Logger.log("TECH: processTick error") end
                 end
-            end
-            if message and message.type == "lab_complete" then
-                local hiveId = message.hive_id
-                local beeCount = message.bee_count or 0
-                print("DEBUG: lab_complete for hive " .. hiveId .. " count " .. beeCount)
-                -- Снимаем блокировку
-                LabManager.returnBeesToHive(hiveId, beeCount)
-                -- Принудительно обновляем данные
-                HiveReader.forceUpdate()
-                -- Перерисовываем текущий экран
-                if mode == "list" then
-                    drawList(mon)
-                else
-                    -- Если мы в детальном режиме, возможно, выбранный улей изменился
-                    -- Перерисовываем с тем же индексом (данные обновились)
-                    drawDetail(mon, HiveReader.getHives()[selectedHiveIndex])
+
+            elseif event == "monitor_touch" and p1 == peripheral.getName(mon) then
+                now = os.clock()
+                if not lastTouchTime or now - lastTouchTime >= 0.3 then
+                    lastTouchTime = now
+                    pcall(handleClick, mon, p2, p3)
                 end
-                Logger.log("TECH: Bees returned and screen updated")
-            end
 
-        elseif event == "timer" and p1 == timer then
-            local now = os.clock()
+            elseif event == "rednet_message" then
+                local sender, msg = p1, p2
+                Logger.log("TECH rednet " .. tostring(sender) .. ": " .. textutils.serialize(msg))
+                if opts.rednetHandler then
+                    local okH, action = pcall(opts.rednetHandler, sender, msg)
+                    if okH and (action == "reload" or action == "freeze") then
+                        return exitRun(action)
+                    end
+                end
+                if msg and msg.type == "lab_complete" then
+                    Logger.log("TECH lab_complete for hive " .. tostring(msg.hive_id))
+                    pcall(function()
+                        LabManager.returnBeesToHive(msg.hive_id, msg.bee_count or 0)
+                        HiveReader.requestUpdate()
+                        redrawCurrent()
+                    end)
+                end
 
-            -- Тик info-экранов (driven от единого владельца событий)
-            if opts.infoTick then
-                pcall(opts.infoTick, now)
-            end
-
-            -- Обновляем данные, если прошло достаточно времени
-            if now - lastUpdateTime >= updateInterval then
-                HiveReader.updateIfNeeded()
+            elseif event == HiveReader.READ_COMPLETE then
+                dataBusy = false
                 lastUpdateTime = now
-                -- Перерисовываем текущий экран (чтобы отразить изменения)
-                if mode == "list" then
-                    drawList(mon)
-                else
-                    drawDetail(mon, HiveReader.getHives()[selectedHiveIndex])
-                end
-            end
+                pcall(redrawCurrent)
 
-            -- Запускаем следующий таймер
-            timer = os.startTimer(0.2)
-        end
+            elseif event == "send_complete" then
+                pcall(redrawCurrent)
+            end
+        end)
+        if not ok then Logger.log("TECH: loop error: " .. tostring(err)) end
     end
 end
 

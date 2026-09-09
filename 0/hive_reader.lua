@@ -1,5 +1,6 @@
 -- hive_reader.lua
 local Genetics = require("library")
+local LabManager = require("lab_manager")
 
 local HiveReader = {}
 local hives = {}
@@ -178,6 +179,47 @@ function HiveReader.forceUpdate()
         readHive(hive)
     end
     lastUpdate = os.clock()
+end
+
+-- ==================== АСИНХРОННОЕ ЧТЕНИЕ (воркер) ====================
+-- getBlockData может "зависнуть" навсегда (блок не отвечает), и в едином
+-- потоке это полностью заморозило бы терминал (pcall от зависания НЕ спасает).
+-- Поэтому живые циклы (tech/info) НЕ читают данные сами, а запрашивают чтение
+-- у воркера, который крутится в отдельном потоке через parallel.waitForAny.
+-- Если чтение зависло — остаётся висеть ТОЛЬКО воркер, UI продолжает жить,
+-- а результаты приходят событием HiveReader.READ_COMPLETE (когда дойдут).
+
+HiveReader.READ_COMPLETE = "hive_read_complete"
+local READ_REQUEST = "hive_read_request"
+
+-- Воркер: ждёт запрос, читает ВСЕ ульи, сообщает о завершении.
+-- Запускается из tech-цикла: parallel.waitForAny(loopFn, HiveReader.worker).
+-- Пока идёт отправка пчёл (LabManager.isSending) улья изменяются и чтение
+-- почти гарантированно зависнет — пропускаем его, но всё равно отвечаем
+-- READ_COMPLETE, чтобы циклы разблокировали dataBusy и обновились позже.
+-- Весь цикл обёрнут в pcall — неожиданная ошибка не убьёт parallel.
+function HiveReader.worker()
+    while true do
+        local ok, err = pcall(function()
+            os.pullEvent(READ_REQUEST)
+            if LabManager.isSending() then
+                os.queueEvent(HiveReader.READ_COMPLETE)
+            else
+                for _, hive in ipairs(hives) do
+                    readHive(hive)
+                end
+                os.queueEvent(HiveReader.READ_COMPLETE)
+            end
+        end)
+        if not ok then
+            Logger.log("HIVE: worker error: " .. tostring(err))
+        end
+    end
+end
+
+-- НЕБЛОКИРУЮЩИЙ запрос чтения: просто ставит событие воркеру и сразу выходит.
+function HiveReader.requestUpdate()
+    os.queueEvent(READ_REQUEST)
 end
 
 return HiveReader

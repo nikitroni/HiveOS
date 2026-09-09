@@ -5,6 +5,7 @@ local tech_screen = require("tech/tech_start")
 local HiveReader = require("hive_reader")
 local infoConfig = require("info.HUD_info_config")
 local Logger = require("logger")
+local LabManager = require("lab_manager")
 
 -- ==================== SCREENS ====================
 
@@ -36,50 +37,52 @@ local function getConfigMonitors(beeCfg)
     return mons
 end
 
--- Драйвер info-экранов. Вызывается из tech-цикла по таймеру (0.2с);
--- сам событий НЕ тянет, поэтому rednet-события не теряются.
--- Обновление данных и смена страницы — ОДНО синхронное событие:
--- происходит ровно когда таймер доходит до 0 (принудительный forceUpdate,
--- без внутреннего 10с-регулятора HiveReader, который рассинхронизировал).
-local function makeInfoDriver(infoMons)
-    local timings = { data_update = 8, page_flip = 8, tick = 0.25 }
-    local cycle = timings.page_flip
+-- ==================== INFO (собственный поток) ====================
 
-    local state = {
-        page = 1,
-        nextEvent = os.clock() + cycle,
-        lastTick = 0,
-    }
+-- Отдельный независимый поток для info-мониторов. Имеет свой os.pullEvent,
+-- свой таймер перелистывания страниц. Тех-цикл НЕ дёргает infoTick —
+-- каждый живёт сам. Если getBlockData/чтение зависло — info жив, tech жив.
+local function runInfo(infoMons)
+    if #infoMons == 0 then
+        while true do os.pullEvent() end
+    end
 
-    return function(now)
-        -- Не чаще, чем раз в tick
-        if now - state.lastTick < timings.tick then return end
-        state.lastTick = now
+    local page, lastDraw = 1, 0
+    local CYCLE = 8
+    local flipTimer = os.startTimer(CYCLE)
+    local flipStart = os.clock()
 
-        local totalPages = math.ceil(HiveReader.count() / infoConfig.grid.hives_per_page)
-        if totalPages < 1 then totalPages = 1 end
+    while true do
+        local event, p1 = os.pullEvent()
+        local now = os.clock()
 
-        -- Синхронная смена: таймер истёк -> свежие данные + смена страницы
-        if now >= state.nextEvent then
-            HiveReader.forceUpdate()
-            if totalPages > 1 then
-                state.page = state.page + 1
-                if state.page > totalPages then state.page = 1 end
-            end
-            state.nextEvent = now + cycle
+        if event == "timer" and p1 == flipTimer then
+            flipTimer = os.startTimer(CYCLE)
+            flipStart = now
+            local total = math.ceil(HiveReader.count() / infoConfig.grid.hives_per_page)
+            if total > 1 then page = page % total + 1 end
+            HiveReader.requestUpdate()
         end
 
-        -- Отсчёт до следующей синхронной смены (данные+страница)
-        local remaining = math.ceil(state.nextEvent - now)
-        if remaining < 0 then remaining = 0 end
-
-        local hives = HiveReader.getHives()
-        for _, mon in ipairs(infoMons) do
-            info_screen.run(mon, state.page, totalPages, hives, remaining)
+        -- Рисуем не чаще 0.25с, с кэш-проверкой в info_screen.run
+        if now - lastDraw >= 0.25 then
+            lastDraw = now
+            local remaining = CYCLE - (now - flipStart)
+            if remaining < 0 then remaining = 0 end
+            local hives = HiveReader.getHives()
+            local total = math.max(1, math.ceil(#hives / infoConfig.grid.hives_per_page))
+            if page > total then page = 1 end
+            for _, mon in ipairs(infoMons) do
+                pcall(info_screen.run, mon, page, total, hives, remaining)
+            end
         end
     end
 end
 
+-- ==================== SCREENS ====================
+
+-- Запуск рабочих экранов: tech + info + неблокирующая отправка пчёл в лабу.
+-- Возвращает результат tech-цикла ("reload"/"freeze"), или nil при ошибке.
 local function runScreens(beeCfg, skipBoot)
     local techNames = beeCfg.peripherals.tech_monitor
     local infoNames = beeCfg.peripherals.info_monitors
@@ -120,23 +123,24 @@ local function runScreens(beeCfg, skipBoot)
     -- Сообщаем HeartOS свой статус
     Boot.sendStatus("free")
 
-    local opts = {
+    local techOpts = {
         rednetHandler = function(sender, message)
             return Boot.handleConfigMessage(sender, message)
         end,
-        infoTick = makeInfoDriver(infoMons),
+        sendToLab = LabManager.startSend,
     }
 
-    -- Единственный владелец событий — tech-цикл (os.pullEvent без фильтра):
-    -- rednet_message ВСЕГДА доходит до обработчика конфигов.
-    -- info-экран рисуется тиком.
-    local ok, res = pcall(tech_screen.run, techMon, opts)
-    if ok then
-        return res
-    end
-    Logger.log("TECH error: " .. tostring(res))
-    os.sleep(5)
-    return nil
+    -- Каждая подсистема в своём параллельном потоке: если один завис,
+    -- остальные продолжают. Tech возвращает результат при reload/freeze.
+    -- info+send+read — бесконечные циклы, их завершает parallel при выходе tech.
+    local techResult = nil
+    parallel.waitForAny(
+        function() techResult = tech_screen.run(techMon, techOpts); return techResult end,
+        function() runInfo(infoMons) end,
+        LabManager.sendWorker,
+        HiveReader.worker
+    )
+    return techResult
 end
 
 -- ==================== MAIN LOOP ====================

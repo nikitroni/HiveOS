@@ -4,9 +4,20 @@
 -- Rednet должен быть открыт до вызова функций.
 
 local Logger = require("logger")
+local ChatNotify = require("chat_notify")
 local LabManager = {}
 local lock = nil
 local lockFile = "lab_lock.dat"
+
+-- Уведомление в чат-бокс (как было раньше): префикс [BeeOS], ошибки красным.
+-- Используем chat_notify (автодетект API, MOTD-цвета), а не сырые коды.
+local function notifyChat(msg, isError)
+    if isError then
+        ChatNotify.sendError(msg)
+    else
+        ChatNotify.sendSuccess(msg)
+    end
+end
 
 local function getPeripherals()
     local cfg = nil
@@ -21,17 +32,24 @@ local function getPeripherals()
     return {}
 end
 
+-- Уведомление в чат-бокс (как было раньше): префикс [BeeOS], ошибки красным.
+-- Помимо файлового лога, чтобы игрок сразу видел, почему блокируется кнопка.
+-- (реализация через ChatNotify объявлена выше в этом файле)
+
 -- Проверка блокировки
+-- ВСЕГДА сверяем с файлом (не кэшируем в памяти): если файл удалён руками,
+-- кнопка должна снова разрешить отправку.
 function LabManager.isLocked()
-    if lock then return lock end
-    if fs.exists(lockFile) then
-        local file = fs.open(lockFile, "r")
-        local lockedHive = file.readAll()
-        file.close()
-        lock = tonumber(lockedHive) or lockedHive
-        return lock
+    if not fs.exists(lockFile) then
+        lock = nil
+        return nil
     end
-    return nil
+    local file = fs.open(lockFile, "r")
+    local lockedHive = file.readAll()
+    file.close()
+    lockedHive = tonumber(lockedHive) or lockedHive
+    lock = lockedHive
+    return lock
 end
 
 function LabManager.lock(hiveId)
@@ -240,90 +258,218 @@ local function takeEmptyCages(hiveBlock)
     return taken
 end
 
--- Основная функция отправки пчёл
-function LabManager.sendBees(hiveId, hiveData, hiveBlockName)
-    -- Получаем объект улья по имени
+-- НЕБЛОКИРУЮЩАЯ ОТПРАВКА ПЧЁЛ В ОТДЕЛЬНОМ ПОТОКЕ
+-- ВСЕ периферийные вызовы к ульям/сундукам (pushItems, getItemDetail)
+-- выполняются ВНЕ главного UI-цикла — в потоке sendWorker, который
+-- запущен в parallel.waitForAny вместе с UI-циклом. Если периферия
+-- зависнет — зависнет только этот поток, таймер/клики/rednet остаются
+-- живы. sleep() внутри потока тоже не убивает события — parallel даёт
+-- каждому потоку свою копию очереди событий.
+--
+--   startSend()  → валидация, ставит activeSend, будит поток (send_begin)
+--   sendWorker() → поток: ждёт send_begin, выполняет runSendCycle()
+--   runSendCycle → init (освободить слоты, клетки в слот 12) →
+--                   wait 2с (sleep) → take (до 3×1с) → broadcast+lock
+
+local activeSend = nil
+local SEND_BEGIN = "send_begin"
+
+-- Сброс после перезапуска экранов
+function LabManager.reset()
+    activeSend = nil
+end
+
+-- Идёт ли сейчас отправка (для гейта чтения ульев)
+function LabManager.isSending()
+    return activeSend ~= nil
+end
+
+--- Валидация и запуск отправки. Ставит флаг activeSend, будит поток.
+function LabManager.startSend(hiveId, hiveData, hiveBlockName)
+    if LabManager.isSending() then
+        Logger.log("LAB: startSend refused, already in progress")
+        return nil
+    end
+    if not hiveBlockName then
+        Logger.log("LAB: startSend: hiveBlockName is nil")
+        return nil
+    end
+    if not hiveData then
+        Logger.log("LAB: startSend: hiveData is nil")
+        return nil
+    end
     local hiveBlock = peripheral.wrap(hiveBlockName)
     if not hiveBlock then
-        Logger.log("LAB: Failed to wrap hive block: " .. tostring(hiveBlockName))
-        return false
+        Logger.log("LAB: startSend: cannot wrap hive block: " .. tostring(hiveBlockName))
+        notifyChat("Cannot access hive " .. tostring(hiveId), true)
+        return nil
     end
-
-    local locked = LabManager.isLocked()
-    if locked then
-        Logger.log("LAB: Cannot send currently processing hive " .. locked)
-        return false
+    if LabManager.isLocked() then
+        Logger.log("LAB: startSend: already locked: " .. tostring(LabManager.isLocked()))
+        notifyChat(string.format("Lab busy - bees of hive %s are being processed, wait", tostring(LabManager.isLocked())), true)
+        return nil
     end
-
     if not hiveData.bees or #hiveData.bees == 0 then
-        Logger.log("LAB: No bees in hive")
-        return false
+        Logger.log("LAB: startSend: no bees in hive")
+        notifyChat("No bees in this hive", true)
+        return nil
     end
 
-    local expectedBeeCount = #hiveData.bees
-    Logger.log("LAB: Attempting to send " .. expectedBeeCount .. " bees from hive " .. hiveId)
+    local expected = #hiveData.bees
+    local state = {
+        hiveId = hiveId,
+        hiveBlockName = hiveBlockName,
+        hiveBlock = hiveBlock,
+        expected = expected,
+        _started = os.clock(),
+    }
+    activeSend = state
+    Logger.log("LAB: send started for hive " .. hiveId .. " (" .. expected .. " bees)")
+    os.queueEvent(SEND_BEGIN)
+    return state
+end
 
-    -- Подсчитываем занятые и свободные слоты (3-11)
-    local occupied = 0
-    for slot = 3, 11 do
-        if hiveBlock.getItemDetail(slot) then
-            occupied = occupied + 1
+--- Полный цикл отправки (выполняется в sendWorker).
+local function runSendCycle()
+    local st = activeSend
+    if not st then return end
+
+    local ok, cycleErr = pcall(function()
+        local peripherals = getPeripherals()
+
+        -- ===== init: освобождаем слоты 3-11 =====
+        local occupied = 0
+        for slot = 3, 11 do
+            if st.hiveBlock.getItemDetail(slot) then occupied = occupied + 1 end
+        end
+        local free = 9 - occupied
+        local needToFree = math.max(0, st.expected - free)
+        if needToFree > 0 then
+            local buffer = peripheral.wrap(peripherals.buffer_chest)
+            if not buffer then
+                error("Buffer chest not found")
+            end
+            local freed = 0
+            for slot = 3, 11 do
+                if freed >= needToFree then break end
+                local item = st.hiveBlock.getItemDetail(slot)
+                if item then
+                    local m = st.hiveBlock.pushItems(peripherals.buffer_chest, slot)
+                    if m > 0 then freed = freed + 1 end
+                end
+            end
+            if freed < needToFree then
+                error("Could not free enough slots (freed " .. freed .. ", needed " .. needToFree .. ")")
+            end
+        end
+
+        -- ===== init: пустые клетки в слот 12 =====
+        local cageChest = peripheral.wrap(peripherals.cage_chest)
+        local placed = 0
+        if cageChest then
+            local slot12Item = st.hiveBlock.getItemDetail(12)
+            if not slot12Item then
+                for slot = 1, cageChest.size() do
+                    if placed >= st.expected then break end
+                    local item = cageChest.getItemDetail(slot)
+                    if isBeeCage(item) then
+                        local toTake = math.min(item.count, st.expected - placed)
+                        local m = cageChest.pushItems(st.hiveBlockName, slot, toTake, 12)
+                        if m > 0 then placed = placed + m end
+                    end
+                end
+            end
+        end
+        if placed < st.expected then
+            error("Not enough empty cages in cage chest (placed " .. placed .. ", needed " .. st.expected .. ")")
+        end
+        Logger.log("LAB: send init done, waiting 2s")
+
+        -- ===== wait: даём пчёлам переместиться =====
+        sleep(2)
+
+        -- ===== take: забираем пчёл =====
+        local labChest = peripheral.wrap(peripherals.lab_chest)
+        if not labChest then
+            error("Lab chest not found")
+        end
+
+        local taken = 0
+        local attempts = 0
+        while taken < st.expected and attempts < 3 do
+            attempts = attempts + 1
+            for slot = 3, 11 do
+                local item = st.hiveBlock.getItemDetail(slot)
+                if isBeeCage(item) then
+                    local m = st.hiveBlock.pushItems(peripherals.lab_chest, slot)
+                    if m > 0 then taken = taken + m end
+                end
+            end
+            if taken < st.expected and attempts < 3 then
+                Logger.log("LAB: attempt " .. attempts .. " took " .. taken .. " cages, need " .. st.expected)
+                sleep(1)
+            end
+        end
+
+        if taken >= st.expected then
+            LabManager.lock(st.hiveId)
+            Logger.log("LAB: Successfully sent " .. taken .. " bees from hive " .. st.hiveId)
+            notifyChat(string.format("%d bees sent to lab from hive %s", taken, tostring(st.hiveId)))
+            rednet.broadcast({
+                type = "lab_request",
+                hive_id = st.hiveId,
+                bee_count = st.expected,
+                hive_block = st.hiveBlockName,
+                sender_id = os.getComputerID(),
+            })
+            Logger.log("LAB: Request broadcast to lab")
+        else
+            error("Only " .. taken .. " bees taken, expected " .. st.expected)
+        end
+    end)
+
+    if not ok then
+        Logger.log("LAB: send cycle error: " .. tostring(cycleErr))
+        notifyChat("Send failed: " .. tostring(cycleErr), true)
+    end
+
+    -- Завершаем: снимаем флаг отправки, будим главный цикл на перерисовку
+    activeSend = nil
+    os.queueEvent("send_complete")
+end
+
+--- Поток отправки. Запускается в parallel.waitForAny ВМЕСТЕ с UI-циклом.
+-- Весь цикл обёрнут в pcall — зависшая/ошибочная отправка не убивает parallel.
+function LabManager.sendWorker()
+    while true do
+        local ok, err = pcall(function()
+            os.pullEvent(SEND_BEGIN)
+            runSendCycle()
+        end)
+        if not ok then
+            Logger.log("LAB: sendWorker error: " .. tostring(err))
         end
     end
-    local free = 9 - occupied
-    Logger.log("LAB: Hive has " .. occupied .. " occupied slots, " .. free .. " free slots")
+end
 
-    -- Сколько слотов нужно освободить, чтобы свободных стало не меньше expectedBeeCount
-    local needToFree = math.max(0, expectedBeeCount - free)
-    Logger.log("LAB: Need to free " .. needToFree .. " slots to have room for " .. expectedBeeCount .. " bees")
+--- Принудительный сброс отправки, если она зависла дольше maxAgeSec.
+-- Вызывается из processTick (главный цикл). Возвращает true если сбросил.
+local function abortStuckSend(maxAgeSec)
+    if not activeSend then return false end
+    if not maxAgeSec then maxAgeSec = 60 end
+    if os.clock() - (activeSend._started or 0) < maxAgeSec then return false end
+    Logger.log("LAB: aborting stuck send for hive " .. tostring(activeSend.hiveId) .. " (>" .. maxAgeSec .. "s)")
+    activeSend = nil
+    os.queueEvent("send_complete")
+    return true
+end
 
-    -- Проверяем буфер
-    if needToFree > 0 then
-        if not hasSpaceInBuffer(needToFree) then
-            Logger.log("LAB: Buffer chest does not have enough free slots. Aborting.")
-            return false
-        end
+function LabManager.abortStuckSend()
+    abortStuckSend(60)
+end
 
-        -- Освобождаем ровно needToFree слотов
-        if not freeSlots(hiveBlock, needToFree) then
-            Logger.log("LAB: Could not free enough slots, aborting")
-            return false
-        end
-    end
-
-    -- Шаг 2: Помещаем пустые клетки в слот 12
-    local cagesPlaced = putEmptyCages(hiveBlock, expectedBeeCount)
-    if cagesPlaced < expectedBeeCount then
-        Logger.log("LAB: Only " .. cagesPlaced .. " empty cages placed (needed " .. expectedBeeCount .. ")")
-        return false
-    end
-
-    sleep(2)  -- ждём обработки
-
-    -- Шаг 3: Забираем клетки с пчёлами с повторными попытками
-    local beesTaken = takeBeeCagesWithRetry(hiveBlock, expectedBeeCount, 3)
-    Logger.log("LAB: Actually took " .. beesTaken .. " bee cages")
-
-    if beesTaken < expectedBeeCount then
-        Logger.log("LAB: ERROR: Only " .. beesTaken .. " bees taken, expected " .. expectedBeeCount .. ". Aborting.")
-        return false
-    end
-
-    LabManager.lock(hiveId)
-    Logger.log("LAB: Successfully sent " .. beesTaken .. " bees from hive " .. hiveId)
-
-    if not hiveBlockName then
-        Logger.log("LAB: ERROR: hiveBlockName is nil!")
-        return false
-    end
-    rednet.broadcast({
-    type = "lab_request",
-    hive_id = hiveId,
-    bee_count = expectedBeeCount,   -- используем правильную переменную
-    hive_block = hiveBlockName
-})
-Logger.log("LAB: Request broadcast to lab")
-
+--- Старая функция состояния (больше не вызывается). Оставлена чтобы не ломать require.
+function LabManager.tickSend(now)
     return true
 end
 
@@ -336,6 +482,7 @@ function LabManager.returnBeesToHive(hiveId, beeCount)
     end
     LabManager.unlock()
     Logger.log("LAB: Cycle completed for hive " .. hiveId)
+    notifyChat(string.format("%d bees returned to hive %s", beeCount or 0, tostring(hiveId)))
     return true
 end
 

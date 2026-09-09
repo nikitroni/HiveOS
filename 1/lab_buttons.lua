@@ -344,12 +344,26 @@ end
 function Buttons.handleTouch(side, x, y)
     local mons = getMonitors()
     local monName = nil
+
+    -- Сначала пробуем по имени периферии (peripheral.getName)
     for name, mon in pairs(mons) do
         if mon and peripheral.getName(mon) == side then
             monName = name
             break
         end
     end
+
+    -- Fallback: сопоставить side с именами из конфига button_monitors
+    if not monName then
+        local bm = lib.peripherals.button_monitors or {}
+        for k, v in pairs(bm) do
+            if v == side then
+                monName = k
+                break
+            end
+        end
+    end
+
     if not monName then return end
 
     if monName == "bee_out" and callbacks.onBeeOut then

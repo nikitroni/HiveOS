@@ -13,7 +13,9 @@ local FLOWER = "minecraft:sunflower"
 local function chatMessage(msg)
     local chat = peripheral.wrap(lib.chat_box)
     if chat then
-        chat.sendMessage(msg)
+        pcall(function()
+            chat.sendMessage(msg, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
+        end)
     else
         print(msg)
     end

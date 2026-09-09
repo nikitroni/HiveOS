@@ -25,16 +25,16 @@ local resourceItems = lib.resource_items or {
 local chatBoxName = lib.chat_box
 
 -- ==================== ОТПРАВКА УВЕДОМЛЕНИЙ В ЧАТ ====================
+local SECTION_SIGN = "\194\167"
 local function chatMessage(msg, isError)
     local chat = peripheral.wrap(chatBoxName)
     if chat then
-        if isError then
-            chat.sendMessage("[LAB] " .. msg)
-        else
-            chat.sendMessage("[LAB] " .. msg)
-        end
+        local color = isError and (SECTION_SIGN .. "c") or (SECTION_SIGN .. "a")
+        pcall(function()
+            chat.sendMessage(color .. msg, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
+        end)
     else
-        print("[LAB] " .. msg)
+        print("[LabOS] " .. msg)
     end
 end
 

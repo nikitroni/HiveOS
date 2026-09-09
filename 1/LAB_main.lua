@@ -45,6 +45,8 @@ local waitPrepared = false  -- перерисовка фона ожидания 
 local frozenSince = nil
 local FROZEN_MAX_SECONDS = 60
 local lastConfigActivity = os.clock()
+-- Таймер экрана WIN (показываем ~5 с после удачного апгрейда, затем WAIT)
+local winSince = 0
 
 -- Файл состояния
 local STATE_FILE = "lab_state.dat"
@@ -54,8 +56,30 @@ local cancelRequested = false
 local LABOS_CONFIG_FILE = "labos_config.lua"
 
 -- ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С ЛОГОМ ====================
+local LOG_DIR = "_logs"
+local LOG_FILE = "_logs/lab_os.log"
+local function ensureLabLogDir()
+    if not fs.exists(LOG_DIR) then
+        pcall(fs.makeDir, LOG_DIR)
+    end
+end
+
+-- Пишет и в экранный буфер (HUD), и в файл (для отладки)
 local function addLogLine(line)
+    if type(line) ~= "string" then
+        line = tostring(line)
+    end
     line = line:gsub("§.", "")
+
+    -- В файл (всегда, без потерь)
+    ensureLabLogDir()
+    local f = fs.open(LOG_FILE, "a")
+    if f then
+        f.writeLine(os.date("%H:%M:%S") .. " " .. line)
+        f.close()
+    end
+
+    -- В экранный буфер HUD
     table.insert(logBuffer, line)
     if #logBuffer > 9 then
         table.remove(logBuffer, 1)
@@ -199,6 +223,14 @@ local function handleConfigMessage(sender, message)
     return nil
 end
 
+-- ==================== ОЧЕРЕДЬ ЗАДАЧ (объявлена до onBeeOut и др.) ====================
+-- Долгие задачи (Возврат пчёл / апгрейд / производство / размножение)
+-- выполняются в отдельном потоке taskWorker, чтобы не блокировать главный
+-- цикл (рендер + события). runTask кладёт задачу в очередь.
+local taskQueue = {}
+local runTask = nil   -- заполняется ниже, но виден всем
+local taskWorker = nil
+
 -- ==================== ОБРАБОТЧИКИ КНОПОК ====================
 local function setBusy(busy)
     processing = busy
@@ -210,7 +242,18 @@ local function setBusy(busy)
     end
 end
 
-function onBeeOut()
+-- Уведомление в чат-бокс LabOS (MOTD-цвета, префикс [LabOS] синим)
+local SECTION_SIGN = "\194\167"
+local function notifyChat(msg, isError)
+    local chat = peripheral.wrap(lib.chat_box)
+    if not chat then return end
+    local color = isError and (SECTION_SIGN .. "c") or (SECTION_SIGN .. "a")
+    pcall(function()
+        chat.sendMessage(color .. msg, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
+    end)
+end
+
+local function onBeeOut()
     if processing then
         addLogLine("Another process running, wait.")
         return
@@ -246,6 +289,9 @@ function onBeeOut()
                 local m = barrel.pushItems(targetHiveBlock, slot)
                 if m > 0 then
                     moved = moved + m
+                    addLogLine(string.format("Returned %d bees to hive.", moved))
+                else
+                    addLogLine("!WARN: slot " .. slot .. " bee not moved to " .. targetHiveBlock)
                 end
             end
         end
@@ -264,8 +310,15 @@ function onBeeOut()
             end
         end
 
-        addLogLine(string.format("Returned %d bees to hive.", moved))
-        rednet.send(lastSenderId, { type = "lab_complete", hive_id = targetHive, bee_count = moved })
+        -- Уведомляем BeeOS о возврате (снимает lock). Уходим в WAIT всегда.
+        if moved > 0 then
+            rednet.send(lastSenderId, { type = "lab_complete", hive_id = targetHive, bee_count = moved })
+            addLogLine(string.format("Sent lab_complete to %s (hive %s, %d bees)", tostring(lastSenderId), tostring(targetHive), moved))
+            notifyChat(string.format("%d bees returned to hive %s", moved, tostring(targetHive)))
+        else
+            addLogLine("!WARN: no bees moved, lock may stay in BeeOS")
+            notifyChat("Bees return failed - no bees moved", true)
+        end
         clearState()
         mode = "wait"
     end)
@@ -273,18 +326,16 @@ end
 
 -- ==================== ЗАДАЧИ (ВЫПОЛНЯЮТСЯ В ОТДЕЛЬНОМ ПОТОКЕ) ====================
 -- ВАЖНО: долгие задачи (производство генов / апгрейд / размножение) НЕ должны
--- блокировать eventLoop, иначе sleep() внутри них съест rednet-сообщения
+-- блокировать главный цикл, иначе sleep() внутри них съест rednet-сообщения
 -- (busy?/freeze) из-за фильтра, и HeartOS не получит ответ. Поэтому задачи
--- кладутся в очередь и выполняются третьим потоком taskWorker, а eventLoop
--- остаётся свободным для rednet и кнопок.
-local taskQueue = {}
-local function runTask(taskFn)
+-- кладутся в очередь и выполняются потоком taskWorker.
+runTask = function(taskFn)
     table.insert(taskQueue, taskFn)
 end
 
 -- Выполняет задачи из очереди (с гарантированным сбросом busy).
 -- Работает, пока есть задачи; иначе крутится на pullEvent (не блокируя rednet).
-local function taskWorker()
+taskWorker = function()
     while running do
         if #taskQueue > 0 then
             local taskFn = table.remove(taskQueue, 1)
@@ -317,9 +368,10 @@ local function onGeneUpgrade()
         local successCount, totalCount = Processor.processAllBees(function(msg) addLogLine(msg) end)
         if successCount == totalCount then
             mode = "win"
+            winSince = os.clock()   -- WIN показываем ~5 с, затем вернёмся в WAIT
         else
             addLogLine(string.format("Incomplete: %d/%d ok", successCount, totalCount))
-            mode = "log"
+            mode = "wait"
         end
     end)
 end
@@ -334,6 +386,7 @@ local function onBeeProduce()
         addLogLine("Start gene prod.")
         mode = "log"
         GeneProduction.runProduction(function(msg) addLogLine("" .. msg) end)
+        mode = "wait"   -- после завершения возвращаемся в главное меню WAIT
     end)
 end
 
@@ -521,9 +574,10 @@ local function handleRednet(senderId, message)
     if message and message.type == "lab_request" then
         targetHive = message.hive_id
         targetHiveBlock = message.hive_block
-        lastSenderId = senderId
+        -- BeeOS передаёт свой реальный id в sender_id (broadcast может дать 0)
+        lastSenderId = message.sender_id or senderId
         saveState()
-        addLogLine(string.format("Received bees from hive %d.", targetHive))
+        addLogLine(string.format("Received bees from hive %d (sender %s).", targetHive, tostring(lastSenderId)))
         mode = "wait"
     else
         local action = handleConfigMessage(senderId, message)
@@ -547,13 +601,13 @@ local function handleRednet(senderId, message)
     end
 end
 
--- ==================== ПОТОК ОТРИСОВКИ ====================
--- Рисует каждые 0.1с. ВАЖНО: не обрабатывает monitor_touch (иначе долгая
--- задача из кнопки заблокирует поток отрисовки и анимации замирают).
--- rednet_message ОБРАБАТЫВАЕТСЯ ЗДЕСЬ (неблокирующе) - иначе eventLoop
--- может не получить unfreeze, если событие уйдёт в этот поток.
--- Ошибки отрисовки ловятся pcall, чтобы терминал не падал.
-local function renderLoop()
+-- ==================== ГЛАВНЫЙ ЦИКЛ (единый владелец всех событий) ====================
+-- Один поток обрабатывает ВСЁ: таймер (рендер), monitor_touch (кнопки),
+-- rednet_message (протокол HeartOS). Благодаря этому клики по кнопкам и
+-- сообщения протокола НИКОГДА не теряются (нет конкуренции потоков за
+-- события). Долгие задачи выполняются отдельным потоком taskWorker и не
+-- блокируют этот цикл.
+local function mainLoop()
     local timer = os.startTimer(0.1)
     while running do
         local event, p1, p2, p3 = os.pullEvent()
@@ -587,6 +641,11 @@ local function renderLoop()
                     if waitPrepared then
                         waitPrepared = false
                     end
+                    -- Экран WIN показываем ~5 с, затем возврат в WAIT
+                    if mode == "win" and winSince > 0 and os.clock() - winSince > 5 then
+                        mode = "wait"
+                        winSince = 0
+                    end
                     if frame % 20 == 0 then
                         refreshData()
                     end
@@ -601,45 +660,28 @@ local function renderLoop()
             end
 
             timer = os.startTimer(0.1)
+
+        elseif event == "monitor_touch" then
+            if not frozen then
+                local ok, err = pcall(function()
+                    -- Диагностика: какой монитор получил клик
+                    addLogLine("Touch: " .. tostring(p1))
+                    Buttons.handleTouch(p1, p2, p3)
+                end)
+                if not ok then
+                    print("LAB touch error: " .. tostring(err))
+                    addLogLine("!TOUCH ERROR: " .. tostring(err))
+                end
+            end
+
         elseif event == "rednet_message" then
-            -- Не блокирует (флаги/состояние) - обрабатываем здесь.
-            -- Обязательно pcall: ошибка не должна убить поток отрисовки
-            -- (иначе терминал замрёт на полосе ожидания навсегда).
             local okR, errR = pcall(handleRednet, p1, p2)
             if not okR then
                 print("LAB rednet error: " .. tostring(errR))
                 addLogLine("!REDNET ERROR: " .. tostring(errR))
             end
         end
-        -- monitor_touch здесь игнорируется (его обработает eventLoop)
     end
 end
 
--- ==================== ПОТОК ОБРАБОТКИ СОБЫТИЙ ====================
--- Обрабатывает касания и rednet. Ошибки ловятся pcall - терминал не падает.
-local function eventLoop()
-    while running do
-        local event, p1, p2, p3 = os.pullEvent()
-        local ok, err = pcall(function()
-            if event == "monitor_touch" then
-                if not frozen then
-                    Buttons.handleTouch(p1, p2, p3)
-                end
-
-            elseif event == "rednet_message" then
-                handleRednet(p1, p2)
-            end
-        end)
-
-        if not ok then
-            -- Ошибка: выводим в консоль и в лог, но продолжаем работу
-            print("LAB error: " .. tostring(err))
-            if type(err) == "table" then
-                print(textutils.serialize(err))
-            end
-            addLogLine("!ERROR: " .. tostring(err))
-        end
-    end
-end
-
-parallel.waitForAny(renderLoop, eventLoop, taskWorker)
+parallel.waitForAny(mainLoop, taskWorker)
