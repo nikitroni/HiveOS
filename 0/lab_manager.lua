@@ -418,7 +418,7 @@ local function runSendCycle()
             rednet.broadcast({
                 type = "lab_request",
                 hive_id = st.hiveId,
-                bee_count = st.expected,
+                bee_count = taken,  -- реальное количество отправленных пчёл
                 hive_block = st.hiveBlockName,
                 sender_id = os.getComputerID(),
             })

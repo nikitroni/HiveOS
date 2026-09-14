@@ -434,6 +434,7 @@ local function run(mon, opts)
 
     local oldTerm = term.redirect(mon)
     mon.setTextScale(1.0)
+    Logger.log("TECH: run started, term->" .. tostring(peripheral.getName(mon)))
 
     local function exitRun(res)
         term.redirect(oldTerm)
@@ -484,8 +485,14 @@ local function run(mon, opts)
                 Logger.log("TECH rednet " .. tostring(sender) .. ": " .. textutils.serialize(msg))
                 if opts.rednetHandler then
                     local okH, action = pcall(opts.rednetHandler, sender, msg)
-                    if okH and (action == "reload" or action == "freeze") then
-                        return exitRun(action)
+                    if okH then
+                        Logger.log("TECH: rednetHandler action='" .. tostring(action) .. "'")
+                        if action == "reload" or action == "freeze" then
+                            Logger.log("TECH: exiting run loop, action=" .. tostring(action))
+                            return exitRun(action)
+                        end
+                    else
+                        Logger.log("TECH: rednetHandler error: " .. tostring(action))
                     end
                 end
                 if msg and msg.type == "lab_complete" then

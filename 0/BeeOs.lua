@@ -53,28 +53,33 @@ local function runInfo(infoMons)
     local flipStart = os.clock()
 
     while true do
-        local event, p1 = os.pullEvent()
-        local now = os.clock()
+        local ok, err = pcall(function()
+            local event, p1 = os.pullEvent()
+            local now = os.clock()
 
-        if event == "timer" and p1 == flipTimer then
-            flipTimer = os.startTimer(CYCLE)
-            flipStart = now
-            local total = math.ceil(HiveReader.count() / infoConfig.grid.hives_per_page)
-            if total > 1 then page = page % total + 1 end
-            HiveReader.requestUpdate()
-        end
-
-        -- Рисуем не чаще 0.25с, с кэш-проверкой в info_screen.run
-        if now - lastDraw >= 0.25 then
-            lastDraw = now
-            local remaining = CYCLE - (now - flipStart)
-            if remaining < 0 then remaining = 0 end
-            local hives = HiveReader.getHives()
-            local total = math.max(1, math.ceil(#hives / infoConfig.grid.hives_per_page))
-            if page > total then page = 1 end
-            for _, mon in ipairs(infoMons) do
-                pcall(info_screen.run, mon, page, total, hives, remaining)
+            if event == "timer" and p1 == flipTimer then
+                flipTimer = os.startTimer(CYCLE)
+                flipStart = now
+                local total = math.ceil(HiveReader.count() / infoConfig.grid.hives_per_page)
+                if total > 1 then page = page % total + 1 end
+                HiveReader.requestUpdate()
             end
+
+            -- Рисуем не чаще 0.25с, с кэш-проверкой в info_screen.run
+            if now - lastDraw >= 0.25 then
+                lastDraw = now
+                local remaining = CYCLE - (now - flipStart)
+                if remaining < 0 then remaining = 0 end
+                local hives = HiveReader.getHives()
+                local total = math.max(1, math.ceil(#hives / infoConfig.grid.hives_per_page))
+                if page > total then page = 1 end
+                for _, mon in ipairs(infoMons) do
+                    info_screen.run(mon, page, total, hives, remaining)
+                end
+            end
+        end)
+        if not ok then
+            Logger.log("INFO: loop error: " .. tostring(err))
         end
     end
 end
@@ -134,12 +139,17 @@ local function runScreens(beeCfg, skipBoot)
     -- остальные продолжают. Tech возвращает результат при reload/freeze.
     -- info+send+read — бесконечные циклы, их завершает parallel при выходе tech.
     local techResult = nil
-    parallel.waitForAny(
+    local parOk, parErr = pcall(parallel.waitForAny,
         function() techResult = tech_screen.run(techMon, techOpts); return techResult end,
         function() runInfo(infoMons) end,
         LabManager.sendWorker,
         HiveReader.worker
     )
+    if not parOk then
+        Logger.log("BeeOS: parallel error: " .. tostring(parErr))
+        return nil
+    end
+    Logger.log("BeeOS: tech finished with result: " .. tostring(techResult))
     return techResult
 end
 
