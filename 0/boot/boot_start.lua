@@ -175,8 +175,10 @@ local function prepareScreen(mon, cfg)
   mon.setBackgroundColor(colors.gray)
   mon.clear()
   local oldTerm = term.redirect(mon)
-  paintutils.drawImage(bg, 1, 1)
+  -- drawImage + восстановление term ГАРАНТИРОВАННО (даже при ошибке)
+  local ok, err = pcall(paintutils.drawImage, bg, 1, 1)
   term.redirect(oldTerm)
+  if not ok then error(tostring(err)) end
   return cfg
 end
 
@@ -229,8 +231,9 @@ local function drawBootFrame(mon)
     mon.setBackgroundColor(colors.gray)
     mon.clear()
     local oldTerm = term.redirect(mon)
-    paintutils.drawImage(bg, 1, 1)
+    local okI, errI = pcall(paintutils.drawImage, bg, 1, 1)
     term.redirect(oldTerm)
+    if not okI then error(tostring(errI)) end
     local p = (os.clock() % 4) / 4
     local wave = 0.5 - 0.5 * math.cos(p * math.pi * 2)
     drawProgress(mon, cfg, math.floor(wave * 100))
