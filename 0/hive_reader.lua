@@ -40,6 +40,11 @@ function HiveReader.loadHiveMap(path)
       error = nil,
     })
   end
+  -- Hives are displayed by ascending id, regardless of the record order
+  -- in hives_map.lua (addition order in the config may differ).
+  table.sort(hives, function(a, b)
+    return (a.id or math.huge) < (b.id or math.huge)
+  end)
   return #hives > 0
 end
 
