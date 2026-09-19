@@ -1,6 +1,7 @@
 -- hive_reader.lua
 local Genetics = require("library")
 local LabManager = require("lab_manager")
+local Logger = require("logger")
 
 local HiveReader = {}
 local hives = {}
