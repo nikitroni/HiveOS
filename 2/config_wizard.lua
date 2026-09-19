@@ -77,6 +77,7 @@ local function chat(msg) ChatUtil.send(msg) end
 local function chatInfo(msg) ChatUtil.sendInfo(msg) end
 local function chatSuccess(msg) ChatUtil.sendSuccess(msg) end
 local function chatError(msg) ChatUtil.sendError(msg) end
+local function chatWarning(msg) ChatUtil.sendWarning(msg) end
 local function chatStep(msg) ChatUtil.sendStep(msg) end
 local function chatHighlight(msg) ChatUtil.sendHighlight(msg) end
 local function chatQuestion(msg) ChatUtil.sendQuestion(msg) end
@@ -92,6 +93,107 @@ local function deviceList(list, sep)
   return table.concat(parts, s)
 end
 
+-- ==================== CREATE STEP / MONITOR-AWARE HELPERS ====================
+
+--- Draw a create-step page (title + lines) and the footer Back button.
+--- @param mon table monitor
+--- @param title string
+--- @param lines table array of strings
+function ConfigWizard.drawCreateStep(mon, title, lines)
+    local area = HudUtil.getArea(mon)
+    MonitorUtil.clearScreen(mon)
+    HudUtil.drawBackground(mon, "create_edit")
+    HudUtil.createEditTitle(mon, title)
+    local y = area.y
+    for _, line in ipairs(lines or {}) do
+        MonitorUtil.drawText(mon, area.x, y, line, MonitorUtil.COLORS.text, area.bgColor)
+        y = y + 1
+    end
+    local footer = HudUtil.getFooter(mon, 1, 1)
+    MonitorUtil.drawButton(mon, footer.back, false)
+end
+
+--- Wait for Y/N in chat while watching the monitor Back button.
+--- @param mon table monitor
+--- @param monSide string monitor side
+--- @param timeout number|nil seconds (default 120)
+--- @return boolean|nil|string true=Y, false=N, nil=timeout, "cancel"=Back pressed
+function ConfigWizard.waitYesNoMonitor(mon, monSide, timeout)
+    ChatUtil.drainQueue()
+    local backBtn = HudUtil.getFooter(mon, 1, 1).back
+    local timerId = os.startTimer(timeout or 120)
+
+    while true do
+        local rawEvent = {os.pullEventRaw()}
+        local event = rawEvent[1]
+
+        if event == "timer" and rawEvent[2] == timerId then
+            return nil
+        elseif event == "monitor_touch" and rawEvent[2] == monSide then
+            if MonitorUtil.getPressedButton({backBtn}, rawEvent[3], rawEvent[4]) then
+                return "cancel"
+            end
+        elseif event == "chat_signed" or event == "chat" then
+            local player, rawMsg
+            if event == "chat_signed" then
+                player, rawMsg = rawEvent[2], rawEvent[3]
+            else
+                player, rawMsg = ChatUtil.extractChat(rawEvent)
+            end
+            local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
+            if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
+                -- own echo -- skip
+            else
+                local lower = string.lower(msg)
+                if lower == "y" or lower == "yes" then
+                    return true
+                elseif lower == "n" or lower == "no" then
+                    return false
+                else
+                    ChatUtil.sendError("Expected Y or N. Please answer Y or N.")
+                end
+            end
+        end
+    end
+end
+
+--- Wait for ANY chat message while watching the monitor Back button.
+--- @param mon table monitor
+--- @param monSide string monitor side
+--- @param timeout number|nil seconds (default 120)
+--- @return string|nil|string message text, nil=timeout, "cancel"=Back pressed
+local function waitAnyMessageMonitor(mon, monSide, timeout)
+    ChatUtil.drainQueue()
+    local backBtn = HudUtil.getFooter(mon, 1, 1).back
+    local timerId = os.startTimer(timeout or 120)
+
+    while true do
+        local rawEvent = {os.pullEventRaw()}
+        local event = rawEvent[1]
+
+        if event == "timer" and rawEvent[2] == timerId then
+            return nil
+        elseif event == "monitor_touch" and rawEvent[2] == monSide then
+            if MonitorUtil.getPressedButton({backBtn}, rawEvent[3], rawEvent[4]) then
+                return "cancel"
+            end
+        elseif event == "chat_signed" or event == "chat" then
+            local player, rawMsg
+            if event == "chat_signed" then
+                player, rawMsg = rawEvent[2], rawEvent[3]
+            else
+                player, rawMsg = ChatUtil.extractChat(rawEvent)
+            end
+            local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
+            if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
+                -- own echo -- skip
+            elseif msg ~= "" then
+                return msg
+            end
+        end
+    end
+end
+
 -- ==================== SCAN A SINGLE DEVICE TYPE ====================
 
 --- Scan a single device type.
@@ -101,12 +203,19 @@ end
 ---
 --- @param deviceType table element from device_types.lua
 --- @param globalAllDevices table list of all ever-seen devices
+--- @param ui table|nil optional { mon = <monitor>, monSide = <string> } to show a
+---   Back button that cancels the whole scan flow
 --- @return table list of found device names for this type
-function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
+--- @return boolean cancelled true when the user pressed Back on the monitor
+function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
     local foundDevices = {}
     local maxCount = deviceType.max or 999
     local label = deviceType.label
     local checkMethods = deviceType.checkMethods
+
+    -- Optional monitor UI: Back cancels the whole scan (old callers pass no ui).
+    local backBtn = ui and HudUtil.getFooter(ui.mon, 1, 1).back or nil
+    local cancelled = false
 
     chatSeparator()
     chatHighlight("=== " .. ChatUtil.device(label) .. " ===")
@@ -114,11 +223,11 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
 
     local adding = true
     local skipRequestedThisType = false
-    while adding and not skipRequestedThisType do
+    while adding and not skipRequestedThisType and not cancelled do
         local deviceFound = false
         local detectedName = nil
 
-        while not deviceFound and not skipRequestedThisType do
+        while not deviceFound and not skipRequestedThisType and not cancelled do
             chatSeparator()
             chatStep("Connect device " .. ChatUtil.device(label) .. " (new/reconnect/skip)")
 
@@ -203,15 +312,27 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices)
                             scanning = false
                         end
                     end
+                elseif event == "monitor_touch" and ui and rawEvent[2] == ui.monSide then
+                    if MonitorUtil.getPressedButton({backBtn}, rawEvent[3], rawEvent[4]) then
+                        cancelled = true
+                        scanning = false
+                    end
                 end
             end
 
-if not deviceFound and not skipRequestedThisType then
+if not deviceFound and not skipRequestedThisType and not cancelled then
                     chatError("Timeout! Device [" .. ChatUtil.device(label, ChatUtil.code("c")) .. "] not detected.")
                     chatInfo("Check connection and try again, or type 'skip'.")
 
-                local skipNow = ChatUtil.waitForAnyMessage(10)
-                if skipNow and string.lower(skipNow) == "skip" then
+                local skipNow
+                if ui then
+                    skipNow = waitAnyMessageMonitor(ui.mon, ui.monSide, 10)
+                else
+                    skipNow = ChatUtil.waitForAnyMessage(10)
+                end
+                if skipNow == "cancel" then
+                    cancelled = true
+                elseif skipNow and string.lower(skipNow) == "skip" then
                     chatHighlight("Skipping device type: " .. ChatUtil.device(label))
                     skipRequestedThisType = true
                 end
@@ -247,9 +368,17 @@ if not deviceFound and not skipRequestedThisType then
                 chatInfo("Found device matches type [" .. ChatUtil.device(label) .. "]")
                 chatQuestion("Add it to config? (Y/N)")
 
-                local confirmed = ChatUtil.waitForYesNo(120)
+                local confirmed
+                if ui then
+                    confirmed = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
+                else
+                    confirmed = ChatUtil.waitForYesNo(120)
+                end
 
-                if confirmed == nil then
+                if confirmed == "cancel" then
+                    cancelled = true
+                    deviceFound = false
+                elseif confirmed == nil then
                     chatError("Response timeout. Try again.")
                 elseif confirmed then
                     -- Переместить уже добавленные найденные первыми?
@@ -260,9 +389,16 @@ if not deviceFound and not skipRequestedThisType then
                         adding = false
                     else
                         chatQuestion("Add another [" .. ChatUtil.device(label, ChatUtil.code("b")) .. "]? (Y/N)")
-                        local addMore = ChatUtil.waitForYesNo(120)
+                        local addMore
+                        if ui then
+                            addMore = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
+                        else
+                            addMore = ChatUtil.waitForYesNo(120)
+                        end
 
-                        if addMore == nil then
+                        if addMore == "cancel" then
+                            cancelled = true
+                        elseif addMore == nil then
                             chatError("Timeout. Moving to next type.")
                             adding = false
                         elseif not addMore then
@@ -277,7 +413,10 @@ if not deviceFound and not skipRequestedThisType then
         end
     end
 
-    return foundDevices
+    if cancelled then
+        return {}, true
+    end
+    return foundDevices, false
 end
 
 -- ==================== PAGE DISPLAY FUNCTIONS ====================
@@ -778,6 +917,9 @@ end
 
 -- ==================== EDIT BY KEYS ====================
 
+-- Cyclic palette for config sections (shared by edit and create wizards).
+local groupColors = { colors.orange, colors.green, colors.blue, colors.purple, colors.yellow, colors.cyan, colors.pink, colors.lightGray }
+
 --- Edit specific sections of an existing config.
 --- Shows current config, asks user which group (key) to replace,
 --- runs scanDeviceType for that group, replaces only that group.
@@ -829,8 +971,6 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     for k, v in pairs(existingConfig) do
         updatedConfig[k] = v
     end
-
-    local groupColors = { colors.orange, colors.green, colors.blue, colors.purple, colors.yellow, colors.cyan, colors.pink, colors.lightGray }
 
     local fullListShown = false
 
@@ -1005,6 +1145,113 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     end
 
     return updatedConfig
+end
+
+-- ==================== CREATE BY TYPES ====================
+
+--- Sequential create wizard: walks deviceTypes in order, scans each type
+--- with the shared scanDeviceType prompt (connect/skip), collects results,
+--- shows a final summary and saves via onSave only after confirmation.
+--- @param deviceTypes table array of device types (already filtered by group)
+--- @param mon table monitor
+--- @param monSide string monitor side
+--- @param configLabel string config name (e.g. "BeeOS (Create)")
+--- @param onSave function(config) callback on save
+--- @return table|nil collected config, or nil on cancel
+function ConfigWizard.createByTypes(deviceTypes, mon, monSide, configLabel, onSave)
+    local w, h = mon.getSize()
+    local area = HudUtil.getArea(mon)
+    local listX, listY, listBg = area.x, area.y, area.bgColor
+
+    ConfigWizard.drawCreateStep(mon, "=== Create " .. configLabel .. " ===", {
+        "Follow instructions in CHAT.",
+        "All responses go through in-game chat.",
+        "Press Back on the monitor to cancel.",
+    })
+
+    chatSeparator()
+    chatHighlight("=== Creating " .. configLabel .. " ===")
+    chatWarning("Creating a NEW config. Current one will be overwritten.")
+    chatInfo("Connect devices one by one as prompted. Type 'skip' to skip a step.")
+    chatSeparator()
+    os.sleep(1)
+
+    local globalAllDevices = {}
+    local collected = {}
+    local total = #deviceTypes
+
+    for i, dt in ipairs(deviceTypes) do
+        chatHighlight("Step " .. i .. "/" .. total .. ": " .. dt.label)
+        ConfigWizard.drawCreateStep(mon, "=== Create " .. configLabel .. " ===", {
+            "Step " .. i .. "/" .. total .. ": " .. dt.label,
+            "Connect device in CHAT. Press Back to cancel.",
+        })
+        local found, cancelled = ConfigWizard.scanDeviceType(dt, globalAllDevices, { mon = mon, monSide = monSide })
+        if cancelled then
+            return nil
+        end
+        if #found > 0 then
+            if dt.max == 1 then
+                collected[dt.key] = found[1]
+            else
+                collected[dt.key] = found
+            end
+        else
+            chatHighlight("Skipped: " .. dt.label)
+        end
+    end
+
+    local collectedCount = 0
+    for _ in pairs(collected) do
+        collectedCount = collectedCount + 1
+    end
+    if collectedCount == 0 then
+        chatError("No devices collected. Nothing saved.")
+        return nil
+    end
+
+    local summaryItems = {}
+    local sidx = 1
+    for _, dt in ipairs(deviceTypes) do
+        table.insert(summaryItems, {
+            key = dt.label,
+            value = collected[dt.key] or "",
+            color = groupColors[((sidx - 1) % #groupColors) + 1],
+        })
+        sidx = sidx + 1
+    end
+
+    chatSeparator()
+    chatHighlight("=== " .. configLabel .. " create complete ===")
+    chatInfo("Check the summary on the monitor.")
+
+    local confirmed = ConfigWizard.waitYesNoNav(
+        mon, monSide,
+        "=== " .. configLabel .. " Summary ===",
+        summaryItems,
+        "Save this config and send? (Y/N)",
+        120
+    )
+    if confirmed == nil then
+        chatError("Timeout. Save cancelled. Nothing saved.")
+        return nil
+    elseif confirmed == false then
+        chatError("Save cancelled. Nothing saved.")
+        return nil
+    end
+
+    chatSeparator()
+    chatSuccess(configLabel .. " configuration created!")
+    MonitorUtil.clearScreen(mon)
+    HudUtil.drawBackground(mon, "create_edit")
+    HudUtil.createEditTitle(mon, "=== Saving " .. configLabel .. " ===")
+    MonitorUtil.drawText(mon, listX, listY, "Configuration created!", MonitorUtil.COLORS.success, listBg)
+
+    if onSave then
+        onSave(collected)
+    end
+
+    return collected
 end
 
 return ConfigWizard

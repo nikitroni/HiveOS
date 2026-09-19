@@ -162,8 +162,8 @@ local function editBeeOSConfig(mon, heartConfig)
 end
 
 --- Create new config (devices only, no hive map).
---- Ограничение: ходового мастера runWizard больше нет — новый конфиг собирается
---- через тот же editByKeys (пустой стартовый конфиг): юзер добавляет разделы по одному.
+--- Sequential wizard: walks BeeOS device types in order via createByTypes,
+--- asking to connect each device; saves once after the final summary confirm.
 local function createBeeOSConfig(mon, heartConfig)
     if not ChatUtil.isAvailable() then
         ChatUtil.init(nil)
@@ -183,12 +183,11 @@ local function createBeeOSConfig(mon, heartConfig)
         return
     end
 
-    local result = ConfigWizard.editByKeys(
+    local result = ConfigWizard.createByTypes(
         deviceTypes,
         mon,
         heartConfig.main_monitor,
         "BeeOS (Create)",
-        {},
         function(devices)
             local config = ConfigManager.createConfig(devices)
             ConfigManager.saveConfig(config, CONFIG_FILE)

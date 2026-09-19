@@ -27,6 +27,7 @@ local HIVE_SLOTS = { "hive", "reader", "relay" }
 local function chatInfo(msg) ChatUtil.sendInfo(msg) end
 local function chatSuccess(msg) ChatUtil.sendSuccess(msg) end
 local function chatError(msg) ChatUtil.sendError(msg) end
+local function chatWarning(msg) ChatUtil.sendWarning(msg) end
 local function chatStep(msg) ChatUtil.sendStep(msg) end
 local function chatHighlight(msg) ChatUtil.sendHighlight(msg) end
 local function chatQuestion(msg) ChatUtil.sendQuestion(msg) end
@@ -57,12 +58,14 @@ end
 --- Scan a single device type, forcing max = 1 (exactly one peripheral).
 --- @param key string one of "hive_block" | "reader_block" | "relay_block"
 --- @param globalAllDevices table list of all ever-seen peripherals
+--- @param ui table|nil optional { mon, monSide } monitor UI for the Back button
 --- @return string|nil found peripheral name, or nil if skipped/timeout
-local function scanOne(key, globalAllDevices)
+--- @return boolean cancelled true when the user pressed Back on the monitor
+local function scanOne(key, globalAllDevices, ui)
   local base = HIVE_TYPES[key]
   if not base then
     chatError("Internal error: hive type '" .. key .. "' not found.")
-    return nil
+    return nil, false
   end
 
   -- Copy with max=1 so scanDeviceType stops after the first confirmed match.
@@ -74,11 +77,14 @@ local function scanOne(key, globalAllDevices)
     group = base.group,
   }
 
-  local found = ConfigWizard.scanDeviceType(singleType, globalAllDevices)
-  if #found > 0 then
-    return found[1]
+  local found, cancelled = ConfigWizard.scanDeviceType(singleType, globalAllDevices, ui)
+  if cancelled then
+    return nil, true
   end
-  return nil
+  if #found > 0 then
+    return found[1], false
+  end
+  return nil, false
 end
 
 -- ==================== SEED KNOWN DEVICES ====================
@@ -109,37 +115,69 @@ end
 
 -- ==================== SCAN A SINGLE HIVE ====================
 
+--- Draw the create-step page for one hive slot (no-op without a monitor UI).
+--- @param ui table|nil { mon, monSide }
+--- @param idLabel string hive label (e.g. "id01")
+--- @param stepNum number 1..3
+--- @param stepLabel string e.g. "Hive Block"
+local function drawHiveStep(ui, idLabel, stepNum, stepLabel)
+  if not ui then return end
+  ConfigWizard.drawCreateStep(ui.mon, "=== Hive Map Wizard: Create ===", {
+    "Hive " .. idLabel,
+    "Step " .. stepNum .. "/3: " .. stepLabel,
+    "Connect in CHAT. Press Back to cancel.",
+  })
+end
+
 --- Scan all 3 blocks of one hive and group them into a record.
 --- On failure it rolls back the global device list so the same hive
 --- can be attempted again cleanly.
 --- @param globalAllDevices table
 --- @param committed table set of already-used peripherals (hives map scope)
+--- @param idLabel string hive label shown on the monitor step page
+--- @param ui table|nil optional { mon, monSide } monitor UI for the Back button
 --- @return table|nil { hive=, reader=, relay= }
-local function scanHive(globalAllDevices, committed)
+--- @return boolean cancelled true when the user pressed Back on the monitor
+local function scanHive(globalAllDevices, committed, idLabel, ui)
   local snapshot = #globalAllDevices
 
   chatSeparator()
   chatHighlight("=== Step 1/3: " .. ChatUtil.device("Hive Block") .. " ===")
-  local hiveBlock = scanOne("hive_block", globalAllDevices)
+  drawHiveStep(ui, idLabel, 1, "Hive Block")
+  local hiveBlock, cancelled1 = scanOne("hive_block", globalAllDevices, ui)
+  if cancelled1 then
+    rollback(globalAllDevices, snapshot)
+    return nil, true
+  end
   if not hiveBlock then
     rollback(globalAllDevices, snapshot)
-    return nil
+    return nil, false
   end
 
   chatSeparator()
   chatHighlight("=== Step 2/3: " .. ChatUtil.device("Hive Reader") .. " ===")
-  local readerBlock = scanOne("reader_block", globalAllDevices)
+  drawHiveStep(ui, idLabel, 2, "Hive Reader")
+  local readerBlock, cancelled2 = scanOne("reader_block", globalAllDevices, ui)
+  if cancelled2 then
+    rollback(globalAllDevices, snapshot)
+    return nil, true
+  end
   if not readerBlock then
     rollback(globalAllDevices, snapshot)
-    return nil
+    return nil, false
   end
 
   chatSeparator()
   chatHighlight("=== Step 3/3: " .. ChatUtil.device("Redstone Relay") .. " ===")
-  local relayBlock = scanOne("relay_block", globalAllDevices)
+  drawHiveStep(ui, idLabel, 3, "Redstone Relay")
+  local relayBlock, cancelled3 = scanOne("relay_block", globalAllDevices, ui)
+  if cancelled3 then
+    rollback(globalAllDevices, snapshot)
+    return nil, true
+  end
   if not relayBlock then
     rollback(globalAllDevices, snapshot)
-    return nil
+    return nil, false
   end
 
   local record = {
@@ -154,11 +192,11 @@ local function scanHive(globalAllDevices, committed)
     if committed[name] then
       chatError("Device already in use: " .. ChatUtil.device(name, ChatUtil.code("c")) .. ". Please connect another one.")
       rollback(globalAllDevices, snapshot)
-      return nil
+      return nil, false
     end
   end
 
-  return record
+  return record, false
 end
 
 -- ==================== HIVE ID HELPERS ====================
@@ -212,28 +250,41 @@ end
 --- @param globalTheirDevices table consecutive sets of peripherals to skip
 --- @param committed table set of peripherals already used
 --- @param idLabel string label to show (e.g. "id01" or new id)
+--- @param ui table|nil optional { mon, monSide } monitor UI for the Back button
 --- @return table|nil record { hive, reader, relay } or nil if not found/skipped
-local function collectHive(globalAllDevices, committed, idLabel)
+--- @return boolean cancelled true when the user pressed Back on the monitor
+local function collectHive(globalAllDevices, committed, idLabel, ui)
   chatSeparator()
   chatHighlight("=== Configure hive " .. idLabel .. " ===")
-  local record = scanHive(globalAllDevices, committed)
+  local record, cancelled = scanHive(globalAllDevices, committed, idLabel, ui)
+  if cancelled then
+    return nil, true
+  end
   if not record then
     chatError("Could not collect all 3 blocks for hive " .. idLabel .. ".")
-    return nil
+    return nil, false
   end
   chatSuccess("Blocks collected for " .. idLabel .. ":")
   chatInfo(" hive:     " .. ChatUtil.device(record.hive))
   chatInfo(" reader: " .. ChatUtil.device(record.reader))
   chatInfo(" relay:   " .. ChatUtil.device(record.relay))
   chatQuestion("Accept these blocks? (Y/N)")
-  if ChatUtil.waitForYesNo(120) == true then
+  local accepted
+  if ui then
+    accepted = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
+  else
+    accepted = ChatUtil.waitForYesNo(120)
+  end
+  if accepted == "cancel" then
+    return nil, true
+  elseif accepted == true then
     for _, slot in ipairs(HIVE_SLOTS) do
       committed[record[slot]] = true
     end
-    return record
+    return record, false
   end
   chatError("Blocks skipped for " .. idLabel .. ".")
-  return nil
+  return nil, false
 end
 
 --- Show a short final message on the monitor and return automatically
@@ -303,13 +354,11 @@ function HiveWizard.create(mon, heartConfig)
     ChatUtil.init(nil)
   end
 
-  local w, h = mon.getSize()
-  local area = HudUtil.getArea(mon)
-  local listX, listY, listBg = area.x, area.y, area.bgColor
-  MonitorUtil.clearScreen(mon)
-  HudUtil.drawBackground(mon, "create_edit")
-  HudUtil.createEditTitle(mon, "=== Hive Map Wizard: Create ===")
-  MonitorUtil.drawText(mon, listX, listY, "Follow instructions in CHAT.", COLORS.highlight, listBg)
+  local ui = { mon = mon, monSide = heartConfig.main_monitor }
+  ConfigWizard.drawCreateStep(mon, "=== Hive Map Wizard: Create ===", {
+    "Follow instructions in CHAT.",
+    "Press Back on the monitor to cancel.",
+  })
   os.sleep(3)
 
   -- Замораживаем BeeOS на время мастера (как при Edit конфига BeeOS):
@@ -322,7 +371,7 @@ function HiveWizard.create(mon, heartConfig)
 
   chatSeparator()
   chatHighlight("=== Hive Map Wizard: Create ===")
-  chatInfo("Creating a NEW hives map. Current one will be overwritten.")
+  chatWarning("Creating a NEW hives map. Current one will be overwritten.")
   chatInfo("For each hive connect 3 blocks (one at a time):")
   chatInfo(" 1) Hive Block         - inventory methods")
   chatInfo(" 2) Hive Reader        - getBlockData")
@@ -336,7 +385,13 @@ function HiveWizard.create(mon, heartConfig)
   local addMore = true
   while addMore do
     local idLabel = hiveIdStr(#hives + 1)
-    local record = collectHive(globalAllDevices, committed, idLabel)
+    local record, cancelled = collectHive(globalAllDevices, committed, idLabel, ui)
+    if cancelled then
+      chatError("Create cancelled by user.")
+      ConfigManager.unfreezeTerminal(targetId)
+      exitInfo(mon, "Create cancelled.", COLORS.error)
+      return
+    end
     if record then
       table.insert(hives, record)
       chatSuccess("Hive '" .. idLabel .. "' added (" .. #hives .. " total).")
@@ -344,7 +399,14 @@ function HiveWizard.create(mon, heartConfig)
       chatError("Hive not added.")
     end
     chatQuestion("Add another hive? (Y/N)")
-    addMore = (ChatUtil.waitForYesNo(120) == true)
+    local addMoreResult = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
+    if addMoreResult == "cancel" then
+      chatError("Create cancelled by user.")
+      ConfigManager.unfreezeTerminal(targetId)
+      exitInfo(mon, "Create cancelled.", COLORS.error)
+      return
+    end
+    addMore = (addMoreResult == true)
   end
 
   if #hives == 0 then

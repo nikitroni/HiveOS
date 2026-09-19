@@ -52,6 +52,7 @@ local MOTD = {
     red = SECTION_SIGN .. "c",        -- errors, Failed, not added, cancelled
     darkGreen = SECTION_SIGN .. "2",  -- titles, highlights (chatHighlight)
     cyan = SECTION_SIGN .. "b",       -- Y/N answers and user questions
+    yellow = SECTION_SIGN .. "e",     -- warnings (overwrite/destructive notices)
 }
 
 --- Build a MOTD color code by its letter (e.g. code("c") -> "§c").
@@ -281,6 +282,11 @@ end
 --- @param message string
 function ChatUtil.sendErrorImmediate(message)
     return sendImpl(MOTD.red .. PREFIXES.error .. message, false)
+end
+
+--- Send a warning message (yellow text) -- used for destructive/overwrite notices.
+function ChatUtil.sendWarning(message)
+    return ChatUtil.send(MOTD.yellow .. "[!] " .. message)
 end
 
 --- Send a step instruction message (cyan text — user prompt)

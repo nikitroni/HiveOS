@@ -161,8 +161,8 @@ local function editLabOSConfig(mon, heartConfig)
 end
 
 --- Create new config (devices only).
---- Ограничение: ходового мастера runWizard больше нет — новый конфиг собирается
---- через тот же editByKeys (пустой стартовый конфиг).
+--- Sequential wizard: walks LabOS device types in order via createByTypes,
+--- asking to connect each device; saves once after the final summary confirm.
 local function createLabOSConfig(mon, heartConfig)
     if not ChatUtil.isAvailable() then
         ChatUtil.init(nil)
@@ -182,12 +182,11 @@ local function createLabOSConfig(mon, heartConfig)
         return
     end
 
-    local result = ConfigWizard.editByKeys(
+    local result = ConfigWizard.createByTypes(
         deviceTypes,
         mon,
         heartConfig.main_monitor,
         "LabOS (Create)",
-        {},
         function(devices)
             local config = ConfigManager.createConfig(devices)
             ConfigManager.saveConfig(config, CONFIG_FILE)
@@ -198,6 +197,9 @@ local function createLabOSConfig(mon, heartConfig)
 
     if result == nil then
         ChatUtil.sendError("Configuration cancelled.")
+        if frozen then
+            ConfigManager.unfreezeTerminal(targetId)
+        end
         return
     end
 end
