@@ -253,11 +253,28 @@ local function exitInfo(mon, text, color)
   os.sleep(2)
 end
 
---- Save the map, send it to BeeOS and show a final monitor message.
+--- Заморозить BeeOS перед запуском мастера (как freezeForEdit в config_beeos).
+--- Если BeeOS занят (отправка пчёл) — freeze не пройдёт, мастер не откроется.
+--- @param heartConfig table
+--- @return number|nil targetId or nil when the terminal rejected the freeze
+local function freezeBeeOS(heartConfig)
+  local targetId = heartConfig.beeos_id or 1
+  local ok, err = ConfigManager.freezeTerminal(targetId)
+  if not ok then
+    chatError("BeeOS " .. tostring(err) .. " (id=" .. tostring(targetId) .. ")")
+    return nil
+  end
+  return targetId
+end
+
+--- Save the map, send it to BeeOS (which is already frozen) and show a
+--- final monitor message. Unfreezes in any case (best effort), like
+--- trySendConfig in config_beeos.lua.
 --- @param mon table
 --- @param heartConfig table
 --- @param map table map { id, hive, reader, relay }[]
-local function saveAndSend(map, mon, heartConfig)
+--- @param targetId number BeeOS terminal id (frozen before calling)
+local function saveAndSend(map, mon, heartConfig, targetId)
   local ok, path = ConfigManager.saveConfig(map, HIVES_FILE)
   if ok then
     chatSuccess("Hives map saved to " .. path .. " (" .. #map .. " hives)!")
@@ -265,13 +282,13 @@ local function saveAndSend(map, mon, heartConfig)
     chatError("Failed to save hives map: " .. path)
   end
 
-  local targetId = heartConfig.beeos_id or 1
-  local ok2, msg2 = ConfigManager.sendInitialConfig(targetId, { command = "hives_map", data = map })
+  local ok2, msg2 = ConfigManager.sendUpdateConfig(targetId, { command = "hives_map", data = map })
   if ok2 then
     chatSuccess("Hives map sent to BeeOS!")
   else
     chatError("Failed to send hives map: " .. tostring(msg2))
   end
+  ConfigManager.unfreezeTerminal(targetId)  -- best effort: размораживаем в любом случае
 
   exitInfo(mon, "Saved " .. #map .. " hives.", ok and ok2 and COLORS.success or COLORS.error)
 end
@@ -294,6 +311,14 @@ function HiveWizard.create(mon, heartConfig)
   HudUtil.createEditTitle(mon, "=== Hive Map Wizard: Create ===")
   MonitorUtil.drawText(mon, listX, listY, "Follow instructions in CHAT.", COLORS.highlight, listBg)
   os.sleep(3)
+
+  -- Замораживаем BeeOS на время мастера (как при Edit конфига BeeOS):
+  -- ульи — часть BeeOS, он не должен работать, пока карта редактируется.
+  -- Если BeeOS занят — отказ и мастер не открывается.
+  local targetId = freezeBeeOS(heartConfig)
+  if not targetId then
+    return
+  end
 
   chatSeparator()
   chatHighlight("=== Hive Map Wizard: Create ===")
@@ -324,6 +349,7 @@ function HiveWizard.create(mon, heartConfig)
 
   if #hives == 0 then
     chatError("No hives collected. Nothing saved.")
+    ConfigManager.unfreezeTerminal(targetId)
     exitInfo(mon, "No hives collected.", COLORS.error)
   else
     -- Build the map and show a full summary on the monitor before saving.
@@ -342,9 +368,10 @@ function HiveWizard.create(mon, heartConfig)
         "Save this map and send to BeeOS? (Y/N)", 120
     )
     if confirm == true then
-      saveAndSend(map, mon, heartConfig)
+      saveAndSend(map, mon, heartConfig, targetId)
     else
       chatError("Save cancelled. Hives map was NOT saved.")
+      ConfigManager.unfreezeTerminal(targetId)
       exitInfo(mon, "Save cancelled.", COLORS.error)
     end
   end
@@ -371,6 +398,13 @@ function HiveWizard.edit(mon, heartConfig)
   if not map or type(map) ~= "table" or #map == 0 then
     chatError("No hives map to edit: " .. tostring(err))
     exitInfo(mon, "No hives map found.", COLORS.error)
+    return
+  end
+
+  -- Замораживаем BeeOS на время мастера (как при Edit конфига BeeOS).
+  -- Если BeeOS занят — отказ и мастер не открывается.
+  local targetId = freezeBeeOS(heartConfig)
+  if not targetId then
     return
   end
 
@@ -406,6 +440,7 @@ function HiveWizard.edit(mon, heartConfig)
 
     if pageResult == "back" then
       chatInfo("Edit cancelled by user.")
+      ConfigManager.unfreezeTerminal(targetId)
       exitInfo(mon, "Edit cancelled.", COLORS.error)
       return
     elseif pageResult == "timeout" then
@@ -449,6 +484,7 @@ function HiveWizard.edit(mon, heartConfig)
 
   if changed == 0 then
     chatError("No changes made. Map not saved.")
+    ConfigManager.unfreezeTerminal(targetId)
     exitInfo(mon, "No changes made.", COLORS.error)
     return
   end
@@ -464,9 +500,10 @@ function HiveWizard.edit(mon, heartConfig)
       "Save and send to BeeOS? (Y/N)", 120
   )
   if confirm == true then
-    saveAndSend(map, mon, heartConfig)
+    saveAndSend(map, mon, heartConfig, targetId)
   else
     chatError("Save cancelled. Map was NOT saved.")
+    ConfigManager.unfreezeTerminal(targetId)
     exitInfo(mon, "Save cancelled.", COLORS.error)
   end
 end

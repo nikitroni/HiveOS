@@ -18,6 +18,7 @@ return {
   rednet_channel = 1234,
 
   -- Rednet IDs of the BeeOS and LabOS terminals
+  -- ID компьютеров, на которых запущены BeeOS и LabOS.
   beeos_id = 0,
   labos_id = 1,
 

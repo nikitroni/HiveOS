@@ -34,6 +34,7 @@ local neededCounts = {}
 local targetHive = nil
 local targetHiveBlock = nil
 local lastSenderId = nil
+local lastExpectedCount = nil
 local processing = false
 
 -- Протокол HeartOS
@@ -97,6 +98,7 @@ local function loadState()
             targetHive = state.hive_id
             targetHiveBlock = state.hive_block
             lastSenderId = state.sender_id
+            lastExpectedCount = state.expected_count
             addLogLine("Loaded previous state from " .. STATE_FILE)
         else
             print("Failed to load state, ignoring.")
@@ -109,6 +111,7 @@ local function saveState()
         hive_id = targetHive,
         hive_block = targetHiveBlock,
         sender_id = lastSenderId,
+        expected_count = lastExpectedCount,
     }
     local file = fs.open(STATE_FILE, "w")
     file.write(textutils.serialize(state))
@@ -122,6 +125,7 @@ local function clearState()
     targetHive = nil
     targetHiveBlock = nil
     lastSenderId = nil
+    lastExpectedCount = nil
 end
 
 -- ==================== ОБНОВЛЕНИЕ ДАННЫХ ====================
@@ -282,32 +286,132 @@ local function onBeeOut()
             addLogLine("!ERROR: Lab chest not found: " .. tostring(lib.peripherals.lab_chest))
             return
         end
+
+        local function isBeeCage(item)
+            return item and (item.name == "productivebees:sturdy_bee_cage" or item.name == "productivebees:bee_cage")
+        end
+
+        -- Проверка: клетка ПУСТАЯ (внутри нет пчелы).
+        -- Улей выбрасывает пустую клетку после обработки возвращённой пчелы
+        -- обычно как sturdy_bee_cage без данных пчелы (иногда bee_cage).
+        local function isCageEmpty(item)
+            if not isBeeCage(item) then return false end
+            if item.name == "productivebees:bee_cage" then return true end
+            -- sturdy_bee_cage: заполнена, если в custom_data есть пчела
+            local comp = item.components
+            if not comp then return true end
+            local cd = comp["minecraft:custom_data"]
+            if not cd then return true end
+            return not cd.bee_type and not cd.type
+        end
+
+        -- Диагностика: содержимое бочки ДО возврата
+        addLogLine("Barrel before return:")
+        for slot = 1, barrel.size() do
+            local item = barrel.getItemDetail(slot)
+            if item then
+                addLogLine(string.format("  slot %d: %s x%d", slot, item.name, item.count))
+            end
+        end
+
+        -- Возврат: улей принимает клетки в слот 12 (входной слот), по одной.
+        -- Стек не переносим целиком - улей обрабатывает клетки по одной.
         local moved = 0
         for slot = 1, barrel.size() do
             local item = barrel.getItemDetail(slot)
-            if item and (item.name == "productivebees:sturdy_bee_cage" or item.name == "productivebees:bee_cage") then
-                local m = barrel.pushItems(targetHiveBlock, slot)
-                if m > 0 then
-                    moved = moved + m
-                    addLogLine(string.format("Returned %d bees to hive.", moved))
-                else
-                    addLogLine("!WARN: slot " .. slot .. " bee not moved to " .. targetHiveBlock)
+            if isBeeCage(item) then
+                local remaining = item.count
+                local attempts = 0
+                while remaining > 0 and attempts < 15 do
+                    attempts = attempts + 1
+                    local slot12Item = hive.getItemDetail(12)
+                    if slot12Item then
+                        if slot12Item.name == "productivebees:bee_cage" then
+                            -- В слот 12 попала пустая клетка - убираем её в хранилище,
+                            -- чтобы освободить входной слот улья. (sturdy_bee_cage
+                            -- в слоте 12 не трогаем: это заполненная клетка, которую
+                            -- улей ещё обрабатывает.)
+                            local cageChestName12 = lib.peripherals.cage_chest
+                            local c12 = peripheral.wrap(cageChestName12)
+                            if c12 then
+                                local cleared = hive.pushItems(cageChestName12, 12)
+                                if cleared > 0 then
+                                    addLogLine("Cleared empty cage from hive slot 12")
+                                end
+                            end
+                        else
+                            addLogLine("!WARN: hive slot 12 busy (filled cage), waiting")
+                        end
+                        if hive.getItemDetail(12) then sleep(1) end
+                    else
+                        local m = barrel.pushItems(targetHiveBlock, slot, 1, 12)
+                        if m > 0 then
+                            moved = moved + m
+                            remaining = remaining - m
+                            addLogLine(string.format("Returned %d bees to hive.", moved))
+                            sleep(0.5)
+                        else
+                            addLogLine("!WARN: slot " .. slot .. " bee not moved to " .. targetHiveBlock)
+                            break
+                        end
+                    end
+                end
+                if remaining > 0 then
+                    addLogLine(string.format("!WARN: %d cages stuck in barrel slot %d", remaining, slot))
                 end
             end
         end
 
-        -- Возвращаем пустые клетки из улья в хранилище
+        -- Диагностика: содержимое бочки ПОСЛЕ возврата
+        local leftInBarrel = 0
+        addLogLine("Barrel after return:")
+        for slot = 1, barrel.size() do
+            local item = barrel.getItemDetail(slot)
+            if item then
+                addLogLine(string.format("  slot %d: %s x%d", slot, item.name, item.count))
+                if isBeeCage(item) then leftInBarrel = leftInBarrel + item.count end
+            end
+        end
+        addLogLine(string.format("Bees returned: %d, expected: %s, left in barrel: %d", moved, tostring(lastExpectedCount), leftInBarrel))
+
+        -- Забираем пустые клетки из улья в хранилище.
+        -- Улей после возврата пчелы выбрасывает пустую клетку
+        -- (может быть как bee_cage, так и sturdy_bee_cage без данных пчелы).
+        -- Собираем с повторами: выбрасывание происходит не мгновенно.
         local cageChest = peripheral.wrap(lib.peripherals.cage_chest)
-        if cageChest then
-            for slot = 3, 11 do
-                local item = hive.getItemDetail(slot)
-                if item and (item.name == "productivebees:bee_cage" or item.name == "productivebees:sturdy_bee_cage") then
-                    local m = hive.pushItems(lib.peripherals.cage_chest, slot)
-                    if m > 0 then
-                        addLogLine(string.format("Returned empty cage from slot %d", slot))
+        local collectedEmpty = 0
+        if not cageChest then
+            addLogLine("!WARN: cage chest not found, empty cages remain in hive")
+        else
+            for attempt = 1, 5 do
+                local found = false
+                for slot = 3, 11 do
+                    local item = hive.getItemDetail(slot)
+                    if item and isCageEmpty(item) then
+                        found = true
+                        local m = hive.pushItems(lib.peripherals.cage_chest, slot)
+                        if m > 0 then
+                            collectedEmpty = collectedEmpty + m
+                            addLogLine(string.format("Returned empty cage from slot %d", slot))
+                        else
+                            addLogLine(string.format("!WARN: empty cage in hive slot %d not moved (cage chest full?)", slot))
+                        end
                     end
                 end
+                -- Слот 12 тоже освобождаем от пустой клетки
+                local s12 = hive.getItemDetail(12)
+                if s12 and isCageEmpty(s12) then
+                    found = true
+                    local m = hive.pushItems(lib.peripherals.cage_chest, 12)
+                    if m > 0 then
+                        collectedEmpty = collectedEmpty + m
+                        addLogLine("Returned empty cage from hive slot 12")
+                    end
+                end
+                if not found then break end
+                if attempt < 5 then sleep(1) end
             end
+            addLogLine(string.format("Empty cages collected from hive: %d", collectedEmpty))
         end
 
         -- Уведомляем BeeOS о возврате (снимает lock). Уходим в WAIT всегда.
@@ -574,10 +678,11 @@ local function handleRednet(senderId, message)
     if message and message.type == "lab_request" then
         targetHive = message.hive_id
         targetHiveBlock = message.hive_block
+        lastExpectedCount = message.bee_count
         -- BeeOS передаёт свой реальный id в sender_id (broadcast может дать 0)
         lastSenderId = message.sender_id or senderId
         saveState()
-        addLogLine(string.format("Received bees from hive %d (sender %s).", targetHive, tostring(lastSenderId)))
+        addLogLine(string.format("Received bees from hive %d (sender %s, expected %s).", targetHive, tostring(lastSenderId), tostring(lastExpectedCount)))
         mode = "wait"
     else
         local action = handleConfigMessage(senderId, message)

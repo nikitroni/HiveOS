@@ -432,6 +432,12 @@ local function run(mon, opts)
     sharedOpts = opts
     LabManager.reset()
 
+    -- Сброс модульного состояния: после freeze/reload модуль не
+    -- перезагружается (require кэширован), поэтому dataBusy мог залипнуть
+    -- между запусками экранов и данные перестали обновляться.
+    dataBusy = false
+    lastUpdateTime = os.clock()
+
     local oldTerm = term.redirect(mon)
     mon.setTextScale(1.0)
     Logger.log("TECH: run started, term->" .. tostring(peripheral.getName(mon)))
@@ -441,6 +447,10 @@ local function run(mon, opts)
         sharedOpts = nil
         return res
     end
+
+    -- Действие выхода, выставляется внутри pcall и проверяется ПОСЛЕ него.
+    -- return внутри pcall выходит только из анонимной функции, а не из run.
+    local exitAction = nil
 
     local function redrawCurrent()
         if mode == "list" then drawList(mon)
@@ -462,7 +472,6 @@ local function run(mon, opts)
     -- Простой loop без parallel: parallel-оркестрация в BeeOs.runScreens
     while true do
         local event, p1, p2, p3 = os.pullEvent()
-        tickTimer = os.startTimer(0.1)
         local now = os.clock()
 
         local ok, err = pcall(function()
@@ -472,6 +481,9 @@ local function run(mon, opts)
                     local okT = pcall(processTick, mon, opts, now)
                     if not okT then Logger.log("TECH: processTick error") end
                 end
+                -- Перезапускаем таймер ВНЕ проверки lastTickTime: иначе ранний
+                -- таймер не будет перезапущен и цикл тиков умрёт.
+                tickTimer = os.startTimer(0.1)
 
             elseif event == "monitor_touch" and p1 == peripheral.getName(mon) then
                 now = os.clock()
@@ -483,19 +495,21 @@ local function run(mon, opts)
             elseif event == "rednet_message" then
                 local sender, msg = p1, p2
                 Logger.log("TECH rednet " .. tostring(sender) .. ": " .. textutils.serialize(msg))
+
                 if opts.rednetHandler then
                     local okH, action = pcall(opts.rednetHandler, sender, msg)
                     if okH then
                         Logger.log("TECH: rednetHandler action='" .. tostring(action) .. "'")
+                        -- Не выходим из pcall через return: только флаг,
+                        -- а выход выполняем ПОСЛЕ pcall (вне анонимной функции).
                         if action == "reload" or action == "freeze" then
-                            Logger.log("TECH: exiting run loop, action=" .. tostring(action))
-                            return exitRun(action)
+                            exitAction = action
                         end
                     else
                         Logger.log("TECH: rednetHandler error: " .. tostring(action))
                     end
                 end
-                if msg and msg.type == "lab_complete" then
+                if not exitAction and msg and msg.type == "lab_complete" then
                     Logger.log("TECH lab_complete for hive " .. tostring(msg.hive_id))
                     pcall(function()
                         LabManager.returnBeesToHive(msg.hive_id, msg.bee_count or 0)
@@ -514,6 +528,10 @@ local function run(mon, opts)
             end
         end)
         if not ok then Logger.log("TECH: loop error: " .. tostring(err)) end
+        if exitAction then
+            Logger.log("TECH: exiting run loop, action=" .. tostring(exitAction))
+            return exitRun(exitAction)
+        end
     end
 end
 

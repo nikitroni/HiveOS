@@ -5,6 +5,10 @@
 
 local Logger = require("logger")
 local ChatNotify = require("chat_notify")
+-- Обязательно тот же путь (тот же ключ кэша require), что и в BeeOs.lua
+-- ("boot/boot_start"): иначе загрузится ВТОРОЙ экземпляр модуля с отдельным
+-- currentStatus, и busy здесь не увидит протокол freeze в BeeOs.
+local Boot = require("boot/boot_start")
 local LabManager = {}
 local lock = nil
 local lockFile = "lab_lock.dat"
@@ -324,6 +328,10 @@ function LabManager.startSend(hiveId, hiveData, hiveBlockName)
         _started = os.clock(),
     }
     activeSend = state
+    -- Терминал занят: HeartOS в ответ на freeze получит "wait" и не
+    -- откроет Edit, пока отправка не завершится.
+    Boot.setCurrentStatus("busy")
+    Boot.sendStatus("busy")
     Logger.log("LAB: send started for hive " .. hiveId .. " (" .. expected .. " bees)")
     os.queueEvent(SEND_BEGIN)
     return state
@@ -433,8 +441,11 @@ local function runSendCycle()
         notifyChat("Send failed: " .. tostring(cycleErr), true)
     end
 
-    -- Завершаем: снимаем флаг отправки, будим главный цикл на перерисовку
+    -- Завершаем: снимаем флаг отправки, будим главный цикл на перерисовку.
+    -- Статус free выставляем в любом случае (успех или ошибка цикла).
     activeSend = nil
+    Boot.setCurrentStatus("free")
+    Boot.sendStatus("free")
     os.queueEvent("send_complete")
 end
 
@@ -460,6 +471,8 @@ local function abortStuckSend(maxAgeSec)
     if os.clock() - (activeSend._started or 0) < maxAgeSec then return false end
     Logger.log("LAB: aborting stuck send for hive " .. tostring(activeSend.hiveId) .. " (>" .. maxAgeSec .. "s)")
     activeSend = nil
+    Boot.setCurrentStatus("free")
+    Boot.sendStatus("free")
     os.queueEvent("send_complete")
     return true
 end

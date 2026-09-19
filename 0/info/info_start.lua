@@ -259,50 +259,58 @@ local function drawPagination(mon, page, totalPages)
     end
 end
 
-local function drawTimer(mon, remaining)
-    local t = config.timer
-    if t then
-        mon.setBackgroundColor(t.bg or colors.black)
-        mon.setCursorPos(t.x, t.y)
-        mon.setTextColor(t.color or colors.green)
-        mon.write(" " .. math.floor(remaining) .. "s")
+-- Скрытый буфер-окно на каждый монитор. Создаётся ОДИН раз (видимость
+-- false), чтобы не было вспышки пустого окна при создании на каждом кадре.
+local buffers = {}
+
+local function getBuffer(mon)
+    local buf = buffers[mon]
+    if not buf then
+        local w, h = mon.getSize()
+        buf = window.create(mon, 1, 1, w, h, false)
+        buffers[mon] = buf
     end
+    return buf
 end
 
 -- Отрисовка кадра на конкретном мониторе.
--- Буфер-окно создаётся на каждый кадр (как в рабочем оригинале), HUD
--- рисуется через term.redirect(buf) — это гарантирует, что nfp-фон
--- попадает на монитор. Кадр пропускается, если ничего не изменилось
--- (нет лишних редрау, «моргание» при обновлении убрано).
-local function run(mon, page, totalPages, hives, remaining)
-    local sec = math.floor(remaining)
+-- Кадр пропускается, если ничего не изменилось (нет лишних редрау и
+-- «моргания»). Таймер в сигнатуру больше не входит — перерисовка только
+-- по изменению страницы/данных.
+local function run(mon, page, totalPages, hives)
     local sig = dataSignature(hives, page)
 
     local prev = lastState[mon]
-    if prev and prev.page == page and prev.total == totalPages and prev.sec == sec and prev.sig == sig then
+    if prev and prev.page == page and prev.total == totalPages and prev.sig == sig then
         return
     end
 
-    local buf = window.create(mon, 1, 1, mon.getSize())
+    local buf = getBuffer(mon)
     buf.setVisible(false)
     buf.setBackgroundColor(colors.black)
     buf.clear()
 
-    -- Перенаправляем вывод в буфер (как в рабочем оригинале — HUD рисуется)
+    -- Перенаправляем вывод в буфер, затем показываем готовый кадр
     local oldTerm = term.current()
     term.redirect(buf)
 
-    -- Отрисовываем всё в буфер
     drawPage(buf, hives, page)
     drawPagination(buf, page, totalPages)
-    drawTimer(buf, remaining)
 
-    -- Возвращаем старый терминал и применяем буфер к монитору
     term.redirect(oldTerm)
     buf.setVisible(true)
-    buf.redraw()
 
-    lastState[mon] = { page = page, total = totalPages, sec = sec, sig = sig }
+    lastState[mon] = { page = page, total = totalPages, sig = sig }
 end
 
-return { run = run }
+-- Сброс при перезапуске экранов: прячем старые буферы (объекты-мониторы
+-- после peripheral.wrap могут быть новыми) и чистим кэш.
+local function reset()
+    for _, buf in pairs(buffers) do
+        pcall(function() buf.setVisible(false) end)
+    end
+    buffers = {}
+    lastState = {}
+end
+
+return { run = run, reset = reset }

@@ -50,7 +50,6 @@ local function runInfo(infoMons)
     local page, lastDraw = 1, 0
     local CYCLE = 8
     local flipTimer = os.startTimer(CYCLE)
-    local flipStart = os.clock()
 
     while true do
         local ok, err = pcall(function()
@@ -59,22 +58,20 @@ local function runInfo(infoMons)
 
             if event == "timer" and p1 == flipTimer then
                 flipTimer = os.startTimer(CYCLE)
-                flipStart = now
                 local total = math.ceil(HiveReader.count() / infoConfig.grid.hives_per_page)
                 if total > 1 then page = page % total + 1 end
-                HiveReader.requestUpdate()
             end
 
-            -- Рисуем не чаще 0.25с, с кэш-проверкой в info_screen.run
+            -- Рисуем не чаще 0.25с, с кэш-проверкой в info_screen.run.
+            -- Обновление данных ведёт tech-цикл (processTick), здесь только
+            -- перелистывание страниц — второй источник чтения не нужен.
             if now - lastDraw >= 0.25 then
                 lastDraw = now
-                local remaining = CYCLE - (now - flipStart)
-                if remaining < 0 then remaining = 0 end
                 local hives = HiveReader.getHives()
                 local total = math.max(1, math.ceil(#hives / infoConfig.grid.hives_per_page))
                 if page > total then page = 1 end
                 for _, mon in ipairs(infoMons) do
-                    info_screen.run(mon, page, total, hives, remaining)
+                    info_screen.run(mon, page, total, hives)
                 end
             end
         end)
@@ -88,7 +85,7 @@ end
 
 -- Запуск рабочих экранов: tech + info + неблокирующая отправка пчёл в лабу.
 -- Возвращает результат tech-цикла ("reload"/"freeze"), или nil при ошибке.
-local function runScreens(beeCfg, skipBoot)
+local function runScreens(beeCfg)
     local techNames = beeCfg.peripherals.tech_monitor
     local infoNames = beeCfg.peripherals.info_monitors
     if type(techNames) == "string" then techNames = { techNames } end
@@ -112,20 +109,12 @@ local function runScreens(beeCfg, skipBoot)
         if mon then infoMons[#infoMons + 1] = mon end
     end
 
-    -- Загрузка (пропускается при перезапуске экранов после нового конфига)
-    if not skipBoot then
-        local allMons = { techMon }
-        for _, mon in ipairs(infoMons) do allMons[#allMons + 1] = mon end
-        local bootThreads = {}
-        for _, mon in ipairs(allMons) do
-            table.insert(bootThreads, function() Boot.show(mon, 2) end)
-        end
-        parallel.waitForAll(table.unpack(bootThreads))
-    end
-
     HiveReader.connectAll()
 
-    -- Сообщаем HeartOS свой статус
+    -- Перезагрузка экранов: сбрасываем кэш/буферы info (объекты-мониторы
+    -- после peripheral.wrap могут быть новыми) и сообщаем HeartOS статус.
+    info_screen.reset()
+    Boot.setCurrentStatus("free")
     Boot.sendStatus("free")
 
     local techOpts = {
@@ -133,6 +122,7 @@ local function runScreens(beeCfg, skipBoot)
             return Boot.handleConfigMessage(sender, message)
         end,
         sendToLab = LabManager.startSend,
+        boot = Boot,
     }
 
     -- Каждая подсистема в своём параллельном потоке: если один завис,
@@ -154,8 +144,6 @@ local function runScreens(beeCfg, skipBoot)
 end
 
 -- ==================== MAIN LOOP ====================
-
-local hasBooted = false
 
 -- Печатает в терминал компьютера текущее состояние двух конфигов.
 -- Мониторы при этом не используются.
@@ -196,6 +184,15 @@ local function isUnfrozen()
     return not Boot.isFrozen()
 end
 
+-- Заглушка перехватывает rednet-сообщения, которые иначе потерялись бы в
+-- waitForConfig (он слушает все rednet_message). lab_complete снимает
+-- lab_lock.dat, даже если BeeOS в этот момент заморожен.
+local function handleStubMessage(sender, message)
+    if type(message) == "table" and message.type == "lab_complete" then
+        pcall(LabManager.returnBeesToHive, message.hive_id, message.bee_count or 0)
+    end
+end
+
 local function run()
     while true do
         Boot.openRednet()
@@ -208,7 +205,7 @@ local function run()
             -- Конфигов нет: не занимаем чужие мониторы, ждём HeartOS.
             -- Мониторы будут использоваться только после приёма конфигов.
             printConfigStatus()
-            Boot.waitForConfig({}, isConfigReady, printConfigStatus)
+            Boot.waitForConfig({}, isConfigReady, printConfigStatus, handleStubMessage)
 
             beeCfg = Boot.loadConfigTable("beeos_config.lua")
             HiveReader.loadHiveMap()
@@ -217,16 +214,15 @@ local function run()
                 os.sleep(1)
             end
         else
-            local skipBoot = hasBooted
-            hasBooted = true
-            local result = runScreens(beeCfg, skipBoot)
+            local result = runScreens(beeCfg)
 
             if result == "freeze" then
-                -- HeartOS заморозил терминал: показываем плавный экран
-                -- ожидания на ВСЕХ мониторах BeeOS (tech + info) и ждём
-                -- конфига или разморозки. Анимация — как при старте.
+                -- HeartOS заморозил терминал: показываем заглушку на ВСЕХ
+                -- мониторах BeeOS (tech + info) и ждём разморозки. Конфиг,
+                -- пришедший во время заглушки, сохраняется, а полная
+                -- переинициализация идёт после unfreeze (в начале цикла).
                 local monitors = getConfigMonitors(beeCfg)
-                Boot.waitForConfig(monitors, isUnfrozen)
+                Boot.waitForConfig(monitors, isUnfrozen, nil, handleStubMessage)
             elseif result ~= "reload" then
                 os.sleep(1)
             end

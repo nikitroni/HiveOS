@@ -89,6 +89,12 @@ local function handleConfigMessage(sender, message)
     if message == "busy?" or message == "status" then
       rednet.send(sender, currentStatus)
     elseif message == "freeze" then
+      if currentStatus == "busy" then
+        -- Терминал занят задачей (отправка пчёл): не замораживаем,
+        -- Edit не должен открыться и прервать процесс.
+        rednet.send(sender, "wait")
+        return nil
+      end
       frozen = true
       rednet.send(sender, "frozen")
       return "freeze"
@@ -267,9 +273,12 @@ end
 -- frozen). `monitors` may be empty: then no screen is used and the loop
 -- only listens for HeartOS config messages (no monitor is taken over).
 -- `onStatusChange` (optional) is called after each received config so the
--- caller can redraw the terminal status. Finishes the bars to 100% before
--- returning when monitors are present.
-local function waitForConfig(monitors, isReady, onStatusChange)
+-- caller can redraw the terminal status. `onMessage` (optional) is called for
+-- every received rednet message before the config protocol runs, so the caller
+-- can react to non-config messages (e.g. lab_complete) that would otherwise be
+-- swallowed by this loop. Finishes the bars to 100% before returning when
+-- monitors are present.
+local function waitForConfig(monitors, isReady, onStatusChange, onMessage)
   release = false
   local threads = {}
   local cfg = #monitors > 0 and loadBootConfig() or nil
@@ -293,6 +302,7 @@ local function waitForConfig(monitors, isReady, onStatusChange)
   table.insert(threads, function()
     while true do
       local _, sender, message = os.pullEvent("rednet_message")
+      if onMessage then pcall(onMessage, sender, message) end
       local action = handleConfigMessage(sender, message)
       if action then
         if onStatusChange then onStatusChange() end
