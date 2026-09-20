@@ -504,8 +504,12 @@ local function onBreed()
     runTask(function()
         addLogLine("Starting breeding...")
         mode = "log"
-        Breeding.run(function(msg) addLogLine(msg) end)
-        mode = "wait"
+        if Breeding.run(function(msg) addLogLine(msg) end) then
+            mode = "win"
+            winSince = os.clock()   -- show WIN ~5 s, then return to WAIT
+        else
+            mode = "wait"
+        end
     end)
 end
 

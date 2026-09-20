@@ -39,13 +39,13 @@ return {
         max = 1,
         group = "beeos",
     },
-    {
-        key = "cage_chest",
-        label = "Cage Chest",
-        checkMethods = {"list", "getItemDetail", "pushItems"},
-        max = 1,
-        group = "beeos",
-    },
+    -- {
+    --     key = "cage_chest",
+    --     label = "Cage Chest",
+    --     checkMethods = {"list", "getItemDetail", "pushItems"},
+    --     max = 1,
+    --     group = "beeos",
+    -- },
     {
         key = "lab_chest",
         label = "Lab Chest",
@@ -177,7 +177,7 @@ return {
     },
     {
         key = "resource_chest",
-        label = "Resource Chest (Honey, Treat)",
+        label = "Resource Chest (Honey, Treat, Cage)",
         checkMethods = {"list", "getItemDetail", "pushItems"},
         max = 1,
         group = "labos",

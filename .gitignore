@@ -9,6 +9,7 @@ _paint/
 _test/
 _test.lua
 backups/
+4/
 
 # Runtime data (configs received from HeartOS, lab/bee state files)
 0/beeos_config.lua
