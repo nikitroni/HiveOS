@@ -331,10 +331,10 @@ local function onBeeOut()
                             -- чтобы освободить входной слот улья. (sturdy_bee_cage
                             -- в слоте 12 не трогаем: это заполненная клетка, которую
                             -- улей ещё обрабатывает.)
-                            local cageChestName12 = lib.peripherals.cage_chest
-                            local c12 = peripheral.wrap(cageChestName12)
+                            local resourceChestName12 = lib.peripherals.resource_chest
+                            local c12 = peripheral.wrap(resourceChestName12)
                             if c12 then
-                                local cleared = hive.pushItems(cageChestName12, 12)
+                                local cleared = hive.pushItems(resourceChestName12, 12)
                                 if cleared > 0 then
                                     addLogLine("Cleared empty cage from hive slot 12")
                                 end
@@ -378,10 +378,10 @@ local function onBeeOut()
         -- Улей после возврата пчелы выбрасывает пустую клетку
         -- (может быть как bee_cage, так и sturdy_bee_cage без данных пчелы).
         -- Собираем с повторами: выбрасывание происходит не мгновенно.
-        local cageChest = peripheral.wrap(lib.peripherals.cage_chest)
+        local resourceChest = peripheral.wrap(lib.peripherals.resource_chest)
         local collectedEmpty = 0
-        if not cageChest then
-            addLogLine("!WARN: cage chest not found, empty cages remain in hive")
+        if not resourceChest then
+            addLogLine("!WARN: resource chest not found, empty cages remain in hive")
         else
             for attempt = 1, 5 do
                 local found = false
@@ -389,12 +389,12 @@ local function onBeeOut()
                     local item = hive.getItemDetail(slot)
                     if item and isCageEmpty(item) then
                         found = true
-                        local m = hive.pushItems(lib.peripherals.cage_chest, slot)
+                        local m = hive.pushItems(lib.peripherals.resource_chest, slot)
                         if m > 0 then
                             collectedEmpty = collectedEmpty + m
                             addLogLine(string.format("Returned empty cage from slot %d", slot))
                         else
-                            addLogLine(string.format("!WARN: empty cage in hive slot %d not moved (cage chest full?)", slot))
+                            addLogLine(string.format("!WARN: empty cage in hive slot %d not moved (resource chest full?)", slot))
                         end
                     end
                 end
@@ -402,7 +402,7 @@ local function onBeeOut()
                 local s12 = hive.getItemDetail(12)
                 if s12 and isCageEmpty(s12) then
                     found = true
-                    local m = hive.pushItems(lib.peripherals.cage_chest, 12)
+                    local m = hive.pushItems(lib.peripherals.resource_chest, 12)
                     if m > 0 then
                         collectedEmpty = collectedEmpty + m
                         addLogLine("Returned empty cage from hive slot 12")

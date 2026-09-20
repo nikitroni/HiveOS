@@ -44,7 +44,6 @@ end
 local MAP = {
     { key = "main_monitor",      set = { "main_monitor" } },
     { key = "lab_chest",         set = { "lab_chest" } },
-    { key = "cage_chest",        set = { "cage_chest" } },
     { key = "resource_chest",    set = { "resource_chest" } },
     { key = "reader_bee",        set = { "reader_bee" } },
     { key = "reader_indexer",    set = { "reader_indexer" } },
@@ -110,7 +109,6 @@ local function checkPeripherals(labLib)
 
     checkName(p.main_monitor, "main_monitor")
     checkName(p.lab_chest, "lab_chest")
-    checkName(p.cage_chest, "cage_chest")
     checkName(p.resource_chest, "resource_chest")
     checkName(p.reader_bee, "reader_bee")
     checkName(p.reader_indexer, "reader_indexer")
