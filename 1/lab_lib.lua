@@ -199,7 +199,6 @@ lab.relay_cycle = {
 
 -- ==================== СЛУЖЕБНОЕ ====================
 lab.chat_box = "chat_box_0"
-lab.rednet_channel = 1234
 lab.bg_file = "HUD_lab.nfp"
 
 return lab

@@ -7,10 +7,6 @@ local HudUtil = require("screens/hud_util")
 
 local MainMenu = {}
 
--- ID терминалов (будут установлены из heartConfig)
-local BEEOS_ID = 1
-local LABOS_ID = 2
-
 local function openRednet(heartConfig)
     local modem = peripheral.find("modem")
     if modem then
@@ -22,8 +18,6 @@ local function openRednet(heartConfig)
 end
 
 function MainMenu.show(mon, heartConfig)
-    BEEOS_ID = heartConfig.beeos_id or 1
-    LABOS_ID = heartConfig.labos_id or 2
     openRednet(heartConfig)
 
     while true do

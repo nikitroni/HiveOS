@@ -21,6 +21,7 @@ local Processor = require("lab_processor")
 local GeneProduction = require("lab_geneproduction")
 local Breeding = require("lab_breeding")
 local Boot = require("lab_boot")
+local RednetProtocol = require("rednet_protocol")
 
 -- ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 local running = true
@@ -143,11 +144,6 @@ end
 
 -- ==================== ПРОТОКОЛ HEARTOS ====================
 
--- Отправить HeartOS свой ID и статус
-local function sendStatus(status)
-    pcall(rednet.broadcast, { type = "status", id = os.getComputerID(), status = status })
-end
-
 -- Сохранить динамический конфиг от HeartOS и пересобрать библиотеку
 local function saveDynamicConfig(data)
     if type(data) ~= "table" then return false end
@@ -242,7 +238,6 @@ local function setBusy(busy)
         currentStatus = "busy"
     else
         currentStatus = "free"
-        sendStatus("free")
     end
 end
 
@@ -526,34 +521,13 @@ end
 
 -- ==================== ОТКРЫТИЕ REDNET ====================
 local function openRednet()
-    local modemSide = peripheral.find("modem")
-    if not modemSide then
-        print("No modem found, trying side 'back'")
-        modemSide = "back"
+    local ok, err = RednetProtocol.host("labos", "main")
+    if not ok then
+        print("Failed to open rednet / host labos: " .. tostring(err))
+        return false
     end
-
-    if modemSide then
-        if type(modemSide) ~= "string" then
-            print("Warning: modemSide is not a string, it's a " .. type(modemSide))
-            modemSide = "back"
-        end
-
-        local channel = lib.rednet_channel
-        print("Opening rednet on " .. modemSide .. " channel " .. tostring(channel))
-
-        if rednet.isOpen(modemSide) then
-            print("Rednet already open on " .. modemSide)
-        else
-            local success, err = pcall(rednet.open, modemSide, channel)
-            if success then
-                print("Rednet opened on " .. modemSide)
-            else
-                print("Failed to open rednet: " .. tostring(err))
-            end
-        end
-    else
-        print("No modem available. Rednet disabled.")
-    end
+    print("Rednet registered as labos/main")
+    return true
 end
 
 -- ==================== ЭКРАН ОЖИДАНИЯ ====================
@@ -671,7 +645,6 @@ if #bees == 0 then
 end
 
 setupButtonCallbacks()
-sendStatus("free")
 
 -- ==================== ОБРАБОТКА REDNET (общая для обоих потоков) ====================
 -- Вызывается из renderLoop И eventLoop, т.к. rednet-сообщение может уйти

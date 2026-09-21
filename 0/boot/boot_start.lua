@@ -4,7 +4,8 @@
 -- terminal has no configs, config file helpers and the HeartOS rednet
 -- config protocol (freeze / update_config / unfreeze / status / busy?).
 
-local REDNET_CHANNEL = 1234
+local RednetProtocol = require("rednet_protocol")
+
 local BEEOS_CONFIG_FILE = "beeos_config.lua"
 local HIVE_MAP_FILE = "hives_map.lua"
 
@@ -14,32 +15,14 @@ local release = false
 
 -- ==================== REDNET ====================
 
-local rednetSide = nil
-
+-- Open the modem and register this terminal as host of beeos/main.
 local function openRednet()
-  if rednetSide and rednet.isOpen(rednetSide) then
-    return true
+  local ok, err = RednetProtocol.host("beeos", "main")
+  if not ok then
+    print("BeeOS rednet host failed: " .. tostring(err))
+    return false
   end
-  local modemSide = peripheral.find("modem")
-  if modemSide and type(modemSide) == "string" then
-    local ok = pcall(rednet.open, modemSide, REDNET_CHANNEL)
-    if ok then
-      rednetSide = modemSide
-      return true
-    end
-  end
-  local ok = pcall(rednet.open, "back", REDNET_CHANNEL)
-  if ok then
-    rednetSide = "back"
-    return true
-  end
-  rednetSide = nil
-  return false
-end
-
-local function sendStatus(status)
-  if not openRednet() then return end
-  pcall(rednet.broadcast, { type = "status", id = os.getComputerID(), status = status })
+  return true
 end
 
 -- ==================== CONFIG FILE HELPERS ====================
@@ -325,7 +308,6 @@ return {
   show = bootMenu,
   waitForConfig = waitForConfig,
   openRednet = openRednet,
-  sendStatus = sendStatus,
   handleConfigMessage = handleConfigMessage,
   saveConfigTable = saveConfigTable,
   loadConfigTable = loadConfigTable,

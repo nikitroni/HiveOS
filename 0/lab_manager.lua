@@ -331,7 +331,6 @@ function LabManager.startSend(hiveId, hiveData, hiveBlockName)
     -- Терминал занят: HeartOS в ответ на freeze получит "wait" и не
     -- откроет Edit, пока отправка не завершится.
     Boot.setCurrentStatus("busy")
-    Boot.sendStatus("busy")
     Logger.log("LAB: send started for hive " .. hiveId .. " (" .. expected .. " bees)")
     os.queueEvent(SEND_BEGIN)
     return state
@@ -445,7 +444,6 @@ local function runSendCycle()
     -- Статус free выставляем в любом случае (успех или ошибка цикла).
     activeSend = nil
     Boot.setCurrentStatus("free")
-    Boot.sendStatus("free")
     os.queueEvent("send_complete")
 end
 
@@ -472,7 +470,6 @@ local function abortStuckSend(maxAgeSec)
     Logger.log("LAB: aborting stuck send for hive " .. tostring(activeSend.hiveId) .. " (>" .. maxAgeSec .. "s)")
     activeSend = nil
     Boot.setCurrentStatus("free")
-    Boot.sendStatus("free")
     os.queueEvent("send_complete")
     return true
 end

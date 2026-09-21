@@ -39,13 +39,13 @@ return {
         max = 1,
         group = "beeos",
     },
-    -- {
-    --     key = "cage_chest",
-    --     label = "Cage Chest",
-    --     checkMethods = {"list", "getItemDetail", "pushItems"},
-    --     max = 1,
-    --     group = "beeos",
-    -- },
+    {
+        key = "cage_chest",
+        label = "Cage Chest",
+        checkMethods = {"list", "getItemDetail", "pushItems"},
+        max = 1,
+        group = "beeos",
+    },
     {
         key = "lab_chest",
         label = "Lab Chest",
@@ -53,7 +53,7 @@ return {
         max = 1,
         group = "beeos",
     },
-    
+     
 
     -- ==================== LABOS ====================
     {
@@ -88,13 +88,6 @@ return {
         key = "breed",
         label = "Breed Button Monitor",
         checkMethods = {"write", "setCursorPos"},
-        max = 1,
-        group = "labos",
-    },
-    {
-        key = "cage_chest",
-        label = "Cage Chest",
-        checkMethods = {"list", "getItemDetail", "pushItems"},
         max = 1,
         group = "labos",
     },

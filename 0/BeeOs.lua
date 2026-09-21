@@ -115,7 +115,6 @@ local function runScreens(beeCfg)
     -- после peripheral.wrap могут быть новыми) и сообщаем HeartOS статус.
     info_screen.reset()
     Boot.setCurrentStatus("free")
-    Boot.sendStatus("free")
 
     local techOpts = {
         rednetHandler = function(sender, message)

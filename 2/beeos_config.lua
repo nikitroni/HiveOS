@@ -7,10 +7,10 @@ return {
       "monitor_2",
       "monitor_5",
     },
-    buffer_chest = "minecraft:barrel_0",
     tech_monitor = {
       "monitor_4",
     },
-    cage_chest = "minecraft:barrel_2",
+    buffer_chest = "minecraft:barrel_0",
+    cage_chest = "ae2:interface_0",
   },
 }

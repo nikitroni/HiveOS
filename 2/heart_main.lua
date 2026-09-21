@@ -4,6 +4,7 @@
 
 local heartConfig = require("heart_config")
 local ChatUtil = require("chat_util")
+local RednetProtocol = require("rednet_protocol")
 
 -- ==================== ПОДКЛЮЧЕНИЕ МОНИТОРА ====================
 
@@ -31,12 +32,18 @@ local function setupRednet()
     if modem then
         local modemSide = type(modem) == "string" and modem or "back"
         if not rednet.isOpen(modemSide) then
-            pcall(rednet.open, modemSide, heartConfig.rednet_channel)
+            pcall(rednet.open, modemSide)
         end
     end
 end
 
 setupRednet()
+
+-- Register as the heartos host so BeeOS/LabOS can find us via rednet.lookup.
+local hostOk, hostErr = RednetProtocol.host("heartos", "main")
+if not hostOk then
+    ChatUtil.sendError("HeartOS: rednet host failed: " .. tostring(hostErr))
+end
 
 -- ==================== ЗАПУСК ИНТЕРФЕЙСА ====================
 

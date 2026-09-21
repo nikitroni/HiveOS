@@ -8,8 +8,21 @@
 -- (слоты, координаты, логика) — жёстко зашиты в самих скриптах BeeOS/LabOS.
 
 local ChatUtil = require("chat_util")
+local RednetProtocol = require("rednet_protocol")
 
 local ConfigManager = {}
+
+-- ==================== REDNET PROTOCOLS ====================
+
+-- Single source of protocol names for screens and the resolver below.
+ConfigManager.PROTOCOL = { heartos = "heartos", beeos = "beeos", labos = "labos" }
+
+--- Resolve a terminal ID by its rednet protocol (dynamic lookup).
+--- @param protocol string
+--- @return number|nil
+function ConfigManager.resolve(protocol)
+    return RednetProtocol.lookup(protocol, "main")
+end
 
 -- ==================== CORE FUNCTIONS ====================
 
@@ -188,14 +201,15 @@ local DEFAULT_TIMEOUT = 5
 
 --- Отправить rednet-сообщение и ждать ответа ТОЛЬКО от targetId.
 --- Принимаем только СТРОКОВЫЕ ответы (free/frozen/config_updated/running/...).
---- Табличные сообщения (broadcast-статусы терминалов {type="status",...})
---- игнорируются и ждём дальше - гарантирует, что busy? не словит чужое.
---- @param targetId number
+--- Табличные сообщения игнорируются и ждём дальше - гарантирует, что busy?
+--- не словит чужое.
+--- @param targetId number resolved terminal id
+--- @param protocol string protocol label used as the rednet message tag
 --- @param command string
 --- @param data table|nil
 --- @param timeout number
 --- @return boolean, any
-function ConfigManager.rednetCall(targetId, command, data, timeout)
+function ConfigManager.rednetCall(targetId, protocol, command, data, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
 
     local msg
@@ -205,7 +219,7 @@ function ConfigManager.rednetCall(targetId, command, data, timeout)
         msg = command
     end
 
-    rednet.send(targetId, msg)
+    rednet.send(targetId, msg, protocol)
     local deadline = os.clock() + timeout
     while true do
         local sender, response = rednet.receive(1)
@@ -224,8 +238,12 @@ end
 --- Проверить, свободен ли терминал (используется редко; основная защита от
 --- редактирования занятого терминала - в freezeTerminal, который получает
 --- "wait"/не-"frozen" если терминал занят).
-function ConfigManager.checkTerminalBusy(targetId, timeout)
-    local ok, response = ConfigManager.rednetCall(targetId, "busy?", nil, timeout or 3)
+function ConfigManager.checkTerminalBusy(protocol, timeout)
+    local id = ConfigManager.resolve(protocol)
+    if not id then
+        return false, "Terminal not found: " .. protocol
+    end
+    local ok, response = ConfigManager.rednetCall(id, protocol, "busy?", nil, timeout or 3)
     if not ok then
         return false, "Terminal offline"
     end
@@ -238,15 +256,20 @@ function ConfigManager.checkTerminalBusy(targetId, timeout)
 end
 
 --- Отправить конфиг терминалу с протоколом заморозки
-function ConfigManager.sendConfigToTerminal(targetId, configData, timeout)
+function ConfigManager.sendConfigToTerminal(protocol, configData, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
 
-    local ok, msg = ConfigManager.checkTerminalBusy(targetId, 3)
+    local id = ConfigManager.resolve(protocol)
+    if not id then
+        return false, "Terminal not found: " .. protocol
+    end
+
+    local ok, msg = ConfigManager.checkTerminalBusy(protocol, 3)
     if not ok then
         return false, msg
     end
 
-    ok, msg = ConfigManager.rednetCall(targetId, "freeze", nil, 5)
+    ok, msg = ConfigManager.rednetCall(id, protocol, "freeze", nil, 5)
     if not ok then
         return false, "Freeze failed: " .. msg
     end
@@ -254,7 +277,7 @@ function ConfigManager.sendConfigToTerminal(targetId, configData, timeout)
         return false, "Terminal rejected freeze (response: " .. tostring(msg) .. ")"
     end
 
-    ok, msg = ConfigManager.rednetCall(targetId, "update_config", configData, timeout)
+    ok, msg = ConfigManager.rednetCall(id, protocol, "update_config", configData, timeout)
     if not ok then
         return false, "Config send failed: " .. msg
     end
@@ -262,7 +285,7 @@ function ConfigManager.sendConfigToTerminal(targetId, configData, timeout)
         return false, "Terminal rejected config (response: " .. tostring(msg) .. ")"
     end
 
-    ok, msg = ConfigManager.rednetCall(targetId, "unfreeze", nil, 3)
+    ok, msg = ConfigManager.rednetCall(id, protocol, "unfreeze", nil, 3)
     if not ok then
         return false, "Unfreeze failed: " .. msg
     end
@@ -274,15 +297,20 @@ function ConfigManager.sendConfigToTerminal(targetId, configData, timeout)
 end
 
 --- Отправить начальный конфиг терминалу (без заморозки)
-function ConfigManager.sendInitialConfig(targetId, configData, timeout)
+function ConfigManager.sendInitialConfig(protocol, configData, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
 
-    rednet.send(targetId, { command = "request_config", data = configData })
+    local id = ConfigManager.resolve(protocol)
+    if not id then
+        return false, "Terminal not found: " .. protocol
+    end
+
+    rednet.send(id, { command = "request_config", data = configData }, protocol)
     local sender, response = rednet.receive(timeout)
     if not sender then
         return false, "No response (timeout " .. timeout .. "s)"
     end
-    if sender ~= targetId then
+    if sender ~= id then
         return false, "Response from wrong terminal"
     end
     if response ~= "config_received" then
@@ -296,8 +324,12 @@ end
 -- (waits with the boot screen), configured, then unfrozen.
 
 --- Freeze a terminal. Expects "frozen".
-function ConfigManager.freezeTerminal(targetId, timeout)
-    local ok, response = ConfigManager.rednetCall(targetId, "freeze", nil, timeout or 3)
+function ConfigManager.freezeTerminal(protocol, timeout)
+    local id = ConfigManager.resolve(protocol)
+    if not id then
+        return false, "Terminal not found: " .. protocol
+    end
+    local ok, response = ConfigManager.rednetCall(id, protocol, "freeze", nil, timeout or 3)
     if not ok then
         return false, "Freeze failed: " .. tostring(response)
     end
@@ -308,8 +340,12 @@ function ConfigManager.freezeTerminal(targetId, timeout)
 end
 
 --- Send a config to an already frozen terminal. Expects "config_updated".
-function ConfigManager.sendUpdateConfig(targetId, configData, timeout)
-    local ok, response = ConfigManager.rednetCall(targetId, "update_config", configData, timeout or 5)
+function ConfigManager.sendUpdateConfig(protocol, configData, timeout)
+    local id = ConfigManager.resolve(protocol)
+    if not id then
+        return false, "Terminal not found: " .. protocol
+    end
+    local ok, response = ConfigManager.rednetCall(id, protocol, "update_config", configData, timeout or 5)
     if not ok then
         return false, "Config send failed: " .. tostring(response)
     end
@@ -320,8 +356,12 @@ function ConfigManager.sendUpdateConfig(targetId, configData, timeout)
 end
 
 --- Unfreeze a terminal. Expects "running".
-function ConfigManager.unfreezeTerminal(targetId, timeout)
-    local ok, response = ConfigManager.rednetCall(targetId, "unfreeze", nil, timeout or 3)
+function ConfigManager.unfreezeTerminal(protocol, timeout)
+    local id = ConfigManager.resolve(protocol)
+    if not id then
+        return false, "Terminal not found: " .. protocol
+    end
+    local ok, response = ConfigManager.rednetCall(id, protocol, "unfreeze", nil, timeout or 3)
     if not ok then
         return false, "Unfreeze failed: " .. tostring(response)
     end
