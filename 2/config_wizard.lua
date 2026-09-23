@@ -223,9 +223,14 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
 
     local adding = true
     local skipRequestedThisType = false
-    while adding and not skipRequestedThisType and not cancelled do
+    local matchedCandidates = nil
+    local skipFinalConfirm = false
+    local stepAborted = false
+    while adding and not skipRequestedThisType and not cancelled and not stepAborted do
         local deviceFound = false
         local detectedName = nil
+        matchedCandidates = nil
+        skipFinalConfirm = false
 
         while not deviceFound and not skipRequestedThisType and not cancelled do
             chatSeparator()
@@ -276,20 +281,34 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                         if not deviceFound then
                             prevList = currentList
                         end
-                    elseif #added > 0 or #removed > 0 then
-                        if not deviceFound then
-                            local detail = "Multiple changes detected"
-                            if #added > 0 then detail = detail .. ", added: " .. deviceList(added) end
-                            if #removed > 0 then detail = detail .. ", removed: " .. deviceList(removed) end
-                            chatInfo(detail)
-                            chatInfo("Work with one device at a time.")
+                    elseif #added > 1 then
+                        local matched = {}
+                        for _, name in ipairs(added) do
+                            if matchesMethods(name, checkMethods) then
+                                table.insert(matched, name)
+                            end
+                        end
+                        if #matched == 0 then
+                            chatError("Detected: " .. deviceList(added) .. " (does not match required methods)")
+                            chatInfo("Try a different device.")
                             for _, name in ipairs(added) do
                                 if not isInGlobalList(name, globalAllDevices) then
                                     table.insert(globalAllDevices, name)
                                 end
                             end
                             prevList = currentList
+                        else
+                            table.sort(matched)
+                            matchedCandidates = matched
+                            scanning = false
                         end
+                    elseif #added > 0 or #removed > 0 then
+                        for _, name in ipairs(added) do
+                            if not isInGlobalList(name, globalAllDevices) then
+                                table.insert(globalAllDevices, name)
+                            end
+                        end
+                        prevList = currentList
                     end
 
                     if scanning then
@@ -318,6 +337,53 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                         scanning = false
                     end
                 end
+            end
+
+            if matchedCandidates then
+                local selected = nil
+                local timedOut = false
+                if #matchedCandidates == 1 then
+                    selected = matchedCandidates[1]
+                else
+                    table.sort(matchedCandidates)
+                    for _, name in ipairs(matchedCandidates) do
+                        chatSeparator()
+                        chatQuestion("Is this the required device? " .. ChatUtil.device(name) .. " (Y/N)")
+                        local ans
+                        if ui then
+                            ans = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 30)
+                        else
+                            ans = ChatUtil.waitForYesNo(30)
+                        end
+                        if ans == "cancel" then
+                            cancelled = true
+                            break
+                        elseif ans == nil then
+                            chatError("No response. Process ended.")
+                            timedOut = true
+                            break
+                        elseif ans then
+                            selected = name
+                            skipFinalConfirm = true
+                            break
+                        end
+                    end
+                    if not selected and not cancelled then
+                        if not timedOut then
+                            chatError("No matching device confirmed. Process will end.")
+                        end
+                        stepAborted = true
+                    end
+                end
+
+                if selected then
+                    detectedName = selected
+                    deviceFound = true
+                end
+            end
+
+            if stepAborted then
+                break
             end
 
 if not deviceFound and not skipRequestedThisType and not cancelled then
@@ -366,13 +432,17 @@ if not deviceFound and not skipRequestedThisType and not cancelled then
                 chatSeparator()
                 chatSuccess("Device detected: " .. ChatUtil.device(name))
                 chatInfo("Found device matches type [" .. ChatUtil.device(label) .. "]")
-                chatQuestion("Add it to config? (Y/N)")
 
                 local confirmed
-                if ui then
-                    confirmed = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
+                if skipFinalConfirm then
+                    confirmed = true
                 else
-                    confirmed = ChatUtil.waitForYesNo(120)
+                    chatQuestion("Add it to config? (Y/N)")
+                    if ui then
+                        confirmed = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
+                    else
+                        confirmed = ChatUtil.waitForYesNo(120)
+                    end
                 end
 
                 if confirmed == "cancel" then
