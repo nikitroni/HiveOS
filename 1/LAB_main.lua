@@ -241,15 +241,9 @@ local function setBusy(busy)
     end
 end
 
--- Уведомление в чат-бокс LabOS (MOTD-цвета, префикс [LabOS] синим)
-local SECTION_SIGN = "\194\167"
+-- Notify the LabOS chat box (shared helper; red for errors, green otherwise).
 local function notifyChat(msg, isError)
-    local chat = peripheral.wrap(lib.chat_box)
-    if not chat then return end
-    local color = isError and (SECTION_SIGN .. "c") or (SECTION_SIGN .. "a")
-    pcall(function()
-        chat.sendMessage(color .. msg, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
-    end)
+    Utils.sendChat(msg, isError)
 end
 
 local function onBeeOut()
@@ -283,7 +277,7 @@ local function onBeeOut()
         end
 
         local function isBeeCage(item)
-            return item and (item.name == "productivebees:sturdy_bee_cage" or item.name == "productivebees:bee_cage")
+            return Utils.isCageItem(item)
         end
 
         -- Проверка: клетка ПУСТАЯ (внутри нет пчелы).
@@ -464,12 +458,77 @@ local function onGeneUpgrade()
     runTask(function()
         addLogLine("Start upgrade.")
         mode = "log"
-        local successCount, totalCount = Processor.processAllBees(function(msg) addLogLine(msg) end)
-        if successCount == totalCount then
+
+        -- Collect non-elite bees in the lab chest
+        local beesList = Utils.getBeesFromBarrel()
+        local nonElite = {}
+        for _, bee in ipairs(beesList) do
+            if not Utils.isElite(bee) then
+                table.insert(nonElite, bee)
+            end
+        end
+
+        if #nonElite == 0 then
+            addLogLine("No bees to upgrade")
+            notifyChat("No bees to upgrade", false)
+            mode = "wait"
+            return
+        end
+
+        -- Pre-check genes for the whole batch and produce the missing amount
+        local need = Utils.calculateNeededGenes(nonElite)
+        local have = Utils.getGeneCountsFromIndexer()
+        local attrsMissing = {}
+        for attr, n in pairs(need) do
+            if n > (have[attr] or 0) then
+                table.insert(attrsMissing, attr)
+            end
+        end
+
+        table.sort(attrsMissing)
+
+        local genesShort = false
+        if #attrsMissing > 0 then
+            local msg = "Producing genes: " .. table.concat(attrsMissing, ", ")
+            addLogLine(msg)
+            notifyChat(msg, false)
+            GeneProduction.runProduction(function(entry) addLogLine("" .. entry) end, {
+                targets = need,
+                maxCycles = 200,
+            })
+            have = Utils.getGeneCountsFromIndexer()
+            for attr, n in pairs(need) do
+                if (have[attr] or 0) < n then
+                    genesShort = true
+                end
+            end
+            if genesShort then
+                notifyChat("Gene production incomplete", true)
+            end
+        end
+
+        -- Pre-check honey_treat (one per bee)
+        local honey = Utils.countItem("productivebees:honey_treat")
+        if honey <= 0 then
+            addLogLine("No honey_treat, aborting upgrade.")
+            notifyChat("No honey_treat. Upgrade aborted.", true)
+            mode = "wait"
+            return
+        end
+        local limit = math.min(honey, #nonElite)
+
+        local successCount, totalCount, partial = Processor.processAllBees(
+            function(msg) addLogLine(msg) end, { maxBees = limit })
+
+        local limited = limit < #nonElite
+        if successCount == totalCount and totalCount > 0 and not partial and not genesShort and not limited then
+            notifyChat(string.format("Upgrade complete: %d/%d", successCount, totalCount), false)
             mode = "win"
-            winSince = os.clock()   -- WIN показываем ~5 с, затем вернёмся в WAIT
+            winSince = os.clock()   -- show WIN ~5 s, then return to WAIT
         else
-            addLogLine(string.format("Incomplete: %d/%d ok", successCount, totalCount))
+            addLogLine(string.format("Incomplete: %d/%d ok (partial=%s genesShort=%s limited=%s)",
+                successCount, totalCount, tostring(partial), tostring(genesShort), tostring(limited)))
+            notifyChat(string.format("Upgrade completed partially: %d/%d ok", successCount, totalCount), true)
             mode = "wait"
         end
     end)

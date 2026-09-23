@@ -179,6 +179,8 @@ lab.processor = {
     incubator_result_slot = 3,
     craft_wait = 1,
     incubate_wait = 5,
+    craft_timeout = 5,
+    incubate_timeout = 10,
 }
 
 -- ==================== НАСТРОЙКИ РЕЛЕ И ПРОИЗВОДСТВА ГЕНОВ ====================

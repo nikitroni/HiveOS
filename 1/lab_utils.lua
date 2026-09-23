@@ -114,4 +114,60 @@ function Utils.formatGeneCount(count, digits)
     return string.format(fmt, count)
 end
 
+-- ==================== CHAT / ITEM / BEE HELPERS ====================
+
+-- Send a chat line with the LabOS prefix (red for errors, green otherwise).
+local SECTION_SIGN = "\194\167"
+function Utils.sendChat(msg, isError)
+    local chat = peripheral.wrap(lib.chat_box)
+    if not chat then
+        print("[LabOS] " .. msg)
+        return
+    end
+    local color = isError and (SECTION_SIGN .. "c") or (SECTION_SIGN .. "a")
+    pcall(function()
+        chat.sendMessage(color .. msg, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
+    end)
+end
+
+-- Find the first slot holding the given item and the total count in the chest.
+function Utils.findItem(itemName)
+    local chest = peripheral.wrap(lib.peripherals.resource_chest)
+    if not chest then return nil, 0 end
+    local okSize, size = pcall(function() return chest.size() end)
+    if not okSize then return nil, 0 end
+    local firstSlot, total = nil, 0
+    for slot = 1, size do
+        local okDetail, item = pcall(function() return chest.getItemDetail(slot) end)
+        if okDetail and item and item.name == itemName then
+            if not firstSlot then firstSlot = slot end
+            total = total + (item.count or 0)
+        end
+    end
+    return firstSlot, total
+end
+
+-- Count all items with the given name in the resource chest.
+function Utils.countItem(itemName)
+    local _, total = Utils.findItem(itemName)
+    return total
+end
+
+-- Return the bee occupying the given (1-based) barrel slot, or nil.
+function Utils.getBeeBySlot(slot)
+    local ok, bees = pcall(Utils.getBeesFromBarrel)
+    if not ok or not bees then return nil end
+    for _, bee in ipairs(bees) do
+        if bee.slot == slot then return bee end
+    end
+    return nil
+end
+
+-- Is the item a bee cage (empty or occupied)?
+function Utils.isCageItem(item)
+    if not item then return false end
+    return item.name == "productivebees:sturdy_bee_cage"
+        or item.name == "productivebees:bee_cage"
+end
+
 return Utils

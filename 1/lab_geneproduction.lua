@@ -22,20 +22,10 @@ local resourceItems = lib.resource_items or {
     "minecraft:sunflower",
     "productivebees:honey_treat"
 }
-local chatBoxName = lib.chat_box
 
 -- ==================== ОТПРАВКА УВЕДОМЛЕНИЙ В ЧАТ ====================
-local SECTION_SIGN = "\194\167"
 local function chatMessage(msg, isError)
-    local chat = peripheral.wrap(chatBoxName)
-    if chat then
-        local color = isError and (SECTION_SIGN .. "c") or (SECTION_SIGN .. "a")
-        pcall(function()
-            chat.sendMessage(color .. msg, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
-        end)
-    else
-        print("[LabOS] " .. msg)
-    end
+    Utils.sendChat(msg, isError)
 end
 
 -- ==================== ПРОВЕРКА РЕСУРСОВ (каждый тип отдельно) ====================
@@ -79,6 +69,17 @@ function GeneProduction.getShortages()
     local shortages = {}
     for _, attr in ipairs({"productivity", "endurance", "behavior", "weather_tolerance"}) do
         shortages[attr] = math.max(0, targetCount - (counts[attr] or 0))
+    end
+    return shortages
+end
+
+-- ==================== SHORTAGES AGAINST EXPLICIT TARGETS ====================
+-- Used by the upgrade flow: produce only as many genes as the pending bees need.
+function GeneProduction.getShortagesFor(targets)
+    local counts = Utils.getGeneCountsFromIndexer()
+    local shortages = {}
+    for attr, target in pairs(targets or {}) do
+        shortages[attr] = math.max(0, (target or 0) - (counts[attr] or 0))
     end
     return shortages
 end
@@ -152,22 +153,52 @@ function GeneProduction.produceCycle(logCallback)
     return true
 end
 
--- ==================== ОСНОВНОЙ ЦИКЛ ПРОИЗВОДСТВА ====================
-function GeneProduction.runProduction(logCallback)
+-- Production run.
+-- opts (optional):
+--   targets   = { attr = count, ... } absolute indexer counts to reach.
+--               Without targets the run tops every gene up to target_gene_count
+--               (button behaviour). With targets it stops as soon as every listed
+--               attribute reaches its own target (upgrade flow).
+--   maxCycles = hard safety limit (default 50, or 200 in targeted mode).
+-- Returns: reached (boolean), info = { reached, reason, counts }.
+function GeneProduction.runProduction(logCallback, opts)
     logCallback = logCallback or function(msg) print(msg) end
+    opts = opts or {}
+    local targets = opts.targets
+    local targeted = type(targets) == "table"
+    local maxCycles = opts.maxCycles or (targeted and 200 or 50)
 
-    -- Начальная проверка ресурсов
+    local function computeShortages()
+        if targeted then
+            return GeneProduction.getShortagesFor(targets)
+        end
+        return GeneProduction.getShortages()
+    end
+
+    local function makeInfo(reached, reason)
+        return { reached = reached, reason = reason, counts = Utils.getGeneCountsFromIndexer() }
+    end
+
+    local function finishOk()
+        logCallback("OK all produced")
+        logCallback("===FINISHED===")
+        if not targeted then
+            chatMessage("Production finished successfully. All genes at target.")
+        end
+        return true, makeInfo(true, "ok")
+    end
+
     logCallback("")
     logCallback("===PROD START===")
     if not GeneProduction.checkResources() then
         chatMessage("Insufficient resources at start. Aborting.", true)
         logCallback("!ERROR: no resources")
         logCallback("===ABORTED===")
-        return false
+        return false, makeInfo(false, "resources")
     end
     logCallback("OK resources")
 
-    local shortages = GeneProduction.getShortages()
+    local shortages = computeShortages()
     local anyMissing = false
     for attr, need in pairs(shortages) do
         if need > 0 then
@@ -177,77 +208,70 @@ function GeneProduction.runProduction(logCallback)
     end
 
     if not anyMissing then
-        logCallback("OK all done")
-        logCallback("===FINISHED===")
-        chatMessage("Production finished successfully. All genes at target.")
-        return true
+        return finishOk()
     end
 
     logCallback("start loops...")
     logCallback("")
 
-    local maxCycles = 50
     local cycle = 0
     local previousCounts = Utils.getGeneCountsFromIndexer()
 
     while cycle < maxCycles do
-    -- Небольшая пауза перед проверкой, чтобы дать отрисоваться
-    sleep(0.01)
+      -- Small pause before the check so the screen can redraw
+      sleep(0.01)
 
-    -- Проверка ресурсов перед циклом
-    if not GeneProduction.checkResources() then
+      if not GeneProduction.checkResources() then
         chatMessage("Resources exhausted during production. Stopping.", true)
         logCallback("!ERROR: resources out")
         logCallback("===STOPPED===")
-        return false
-    end
+        return false, makeInfo(false, "resources")
+      end
 
-    shortages = GeneProduction.getShortages()
-    local totalMissing = 0
-    for _, need in pairs(shortages) do
+      shortages = computeShortages()
+      local totalMissing = 0
+      for _, need in pairs(shortages) do
         totalMissing = totalMissing + need
-    end
+      end
 
-    if totalMissing == 0 then
-        logCallback("OK all produced")
-        logCallback("===FINISHED===")
-        chatMessage("Production finished successfully. All genes at target.")
-        return true
-    end
+      if totalMissing == 0 then
+        return finishOk()
+      end
 
-    logCallback(string.format("---CYCLE %d---", cycle+1))
-    logCallback(string.format(" still %d total", totalMissing))
+      logCallback(string.format("---CYCLE %d---", cycle + 1))
+      logCallback(string.format(" still %d total", totalMissing))
 
-    local success = GeneProduction.produceCycle(logCallback)
-    if not success then
+      local success = GeneProduction.produceCycle(logCallback)
+      if not success then
         chatMessage("Production cycle failed. Aborting.", true)
         logCallback("!ERROR: cycle failed")
         logCallback("===ABORTED===")
-        return false
-    end
+        return false, makeInfo(false, "relay")
+      end
 
-    -- Небольшая пауза после цикла перед следующей итерацией
-    sleep(0.01)
+      sleep(0.01)
 
-        local newCounts = Utils.getGeneCountsFromIndexer()
-        logCallback(" results:")
-        for attr, need in pairs(shortages) do
-            local added = (newCounts[attr] or 0) - (previousCounts[attr] or 0)
-            if added > 0 then
-                logCallback(string.format(" +%d %s", added, attr))
-            end
+      local newCounts = Utils.getGeneCountsFromIndexer()
+      logCallback(" results:")
+      for attr, need in pairs(shortages) do
+        local added = (newCounts[attr] or 0) - (previousCounts[attr] or 0)
+        if added > 0 then
+          logCallback(string.format(" +%d %s", added, attr))
         end
-        previousCounts = newCounts
-        logCallback("")
+      end
+      previousCounts = newCounts
+      logCallback("")
 
-        cycle = cycle + 1
-        sleep(0.1)
+      cycle = cycle + 1
+      sleep(0.1)
     end
 
-    chatMessage("Production stopped after max cycles.", true)
+    if not targeted then
+      chatMessage("Production stopped after max cycles.", true)
+    end
     logCallback("!ERROR: max cycles")
     logCallback("===STOPPED===")
-    return false
+    return false, makeInfo(false, "cycles")
 end
 
 return GeneProduction
