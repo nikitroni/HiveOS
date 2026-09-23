@@ -169,6 +169,13 @@ return {
         group = "labos",
     },
     {
+        key = "clicker_breeding_relay",
+        label = "Breeding Automation Relay",
+        checkMethods = {"setBundledOutput", "setAnalogOutput"},
+        max = 1,
+        group = "labos",
+    },
+    {
         key = "resource_chest",
         label = "Resource Chest (Honey, Treat, Cage)",
         checkMethods = {"list", "getItemDetail", "pushItems"},

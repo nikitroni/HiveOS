@@ -51,6 +51,7 @@ local MAP = {
     { key = "breeding_chamber",  set = { "breeding_chamber" } },
     { key = "incubator",         set = { "incubator" } },
     { key = "relay_incubator",   set = { "relay" } },
+    { key = "clicker_breeding_relay", set = { "clicker_breeding_relay" } },
     { key = "crafter_1",         set = { "crafters", 1 } },
     { key = "crafter_2",         set = { "crafters", 2 } },
     { key = "crafter_3",         set = { "crafters", 3 } },
@@ -116,6 +117,7 @@ local function checkPeripherals(labLib)
     checkName(p.breeding_chamber, "breeding_chamber")
     checkName(p.incubator, "incubator")
     checkName(p.relay, "relay")
+    checkName(p.clicker_breeding_relay, "clicker_breeding_relay")
     checkName(labLib.chat_box, "chat_box")
     if type(p.crafters) == "table" then
         for i, v in ipairs(p.crafters) do

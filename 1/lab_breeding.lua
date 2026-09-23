@@ -35,6 +35,9 @@ local INCUBATOR_ADULT_SLOT = 3
 -- MOTD section sign (UTF-8) - same as LAB_main.lua
 local SECTION_SIGN = "\194\167"
 
+-- Every side of the relay, so a pulse propagates in all directions.
+local RELAY_SIDES = { "front", "back", "left", "right", "top", "bottom" }
+
 -- ==================== HELPERS ====================
 
 -- Chat notification with optional MOTD color code ("c" red, "e" yellow).
@@ -79,6 +82,97 @@ end
 
 local function isCageEmpty(item)
   return isCage(item) and not isCageOccupied(item)
+end
+
+-- Read bees from the lab chest via the Block Reader attached to it.
+-- Returns ({ { slot = 1-based, age = number|nil, type = string|nil }, ... }, nil)
+-- or (nil, errorMessage). Only cages holding a bee (isProductiveBee == 1) count.
+local function scanBeesInChest()
+  local readerName = lib.peripherals.reader_bee
+  if type(readerName) ~= "string" or readerName == "" then
+    return nil, "reader_bee not defined in config"
+  end
+  local reader = peripheral.wrap(readerName)
+  if not reader then
+    return nil, "bee reader missing"
+  end
+
+  local ok, data = pcall(function() return reader.getBlockData() end)
+  if not ok or not data or not data.Items then
+    return nil, "bee reader returned no data"
+  end
+
+  local bees = {}
+  for _, item in ipairs(data.Items) do
+    if CAGE_NAMES[item.id] then
+      local components = item.components
+      local custom = components and components["minecraft:custom_data"]
+      if custom and custom.isProductiveBee == 1 then
+        local age = custom.Age
+        if age == nil then age = item.Age end
+        for _ = 1, (item.count or 1) do
+          table.insert(bees, {
+            slot = (item.Slot or 0) + 1,
+            age = age,
+            type = custom.type,
+          })
+        end
+      end
+    end
+  end
+  return bees, nil
+end
+
+-- ==================== RELAY PULSE (auto-detected API) ====================
+
+local function hasMethod(methods, method)
+  for _, m in ipairs(methods) do
+    if m == method then return true end
+  end
+  return false
+end
+
+-- Probe with a harmless OFF on "front": fails on boolean-only APIs.
+local function probeSideOutput(p)
+  return pcall(function() p.setOutput("front", false) end) == true
+end
+
+-- Returns (method, useSides) for the relay, or (nil, false) when unsupported.
+local function detectRelayMethod(name, p)
+  local ok, methods = pcall(function() return peripheral.getMethods(name) end)
+  if ok and type(methods) == "table" then
+    if hasMethod(methods, "setOutput") then
+      return "setOutput", probeSideOutput(p)
+    end
+    if hasMethod(methods, "setBundledOutput") then return "setBundledOutput", false end
+    if hasMethod(methods, "setAnalogOutput") then return "setAnalogOutput", false end
+    return nil, false
+  end
+  if type(p.setOutput) == "function" then
+    return "setOutput", probeSideOutput(p)
+  end
+  if type(p.setBundledOutput) == "function" then return "setBundledOutput", false end
+  if type(p.setAnalogOutput) == "function" then return "setAnalogOutput", false end
+  return nil, false
+end
+
+-- Drive the relay ON/OFF through the detected method, covering all sides.
+local function setRelayOutput(p, method, useSides, on)
+  pcall(function()
+    if method == "setOutput" then
+      if useSides then
+        for _, side in ipairs(RELAY_SIDES) do
+          p.setOutput(side, on)
+        end
+      else
+        p.setOutput(on)
+      end
+    elseif method == "setBundledOutput" then
+      p.setBundledOutput(on and colors.white or 0)
+    elseif method == "setAnalogOutput" then
+      p.setAnalogOutput(on and 15 or 0)
+    end
+  end)
 end
 
 local function countByName(container, itemName)
@@ -182,10 +276,26 @@ function Breeding.run(logCallback)
   -- ==================== PRE-CHECK (no movement yet) ====================
   logCallback("Pre-check: parents and resources...")
 
+  local parentBees, scanErr = scanBeesInChest()
+  if not parentBees then return fail(scanErr) end
+  if #parentBees ~= 2 then
+    return fail(string.format("lab_chest must contain exactly 2 bee cages (found %d)", #parentBees))
+  end
+
+  local adultSlots = {}
+  for _, bee in ipairs(parentBees) do
+    if bee.age == 0 then
+      table.insert(adultSlots, bee.slot)
+    end
+  end
+  if #adultSlots ~= 2 then
+    return fail(string.format("lab_chest must contain 2 adult bees (found %d)", #adultSlots))
+  end
+
+  -- Safety: the parent slots must be free before the move.
   for _, slot in ipairs(CHAMBER_PARENT_SLOTS) do
-    local item = chamber.getItemDetail(slot)
-    if not isCageOccupied(item) then
-      return fail(string.format("breeding chamber slot %d has no parent bee", slot))
+    if chamber.getItemDetail(slot) ~= nil then
+      return fail(string.format("breeding chamber slot %d is not empty", slot))
     end
   end
 
@@ -205,6 +315,19 @@ function Breeding.run(logCallback)
   end
 
   logCallback(string.format("Resources OK: flowers %d, treats %d, cages %d", flowerCount, treatCount, cageCount))
+
+  -- ==================== MOVE PARENTS -> CHAMBER ====================
+  for i, toSlot in ipairs(CHAMBER_PARENT_SLOTS) do
+    local fromSlot = adultSlots[i]
+    local moved = labChest.pushItems(chamberName, fromSlot, 1, toSlot)
+    if type(moved) ~= "number" or moved < 1 then
+      return fail(string.format("failed to move parent bee to chamber slot %d", toSlot))
+    end
+    if not isCageOccupied(chamber.getItemDetail(toSlot)) then
+      return fail(string.format("parent bee missing in chamber slot %d", toSlot))
+    end
+    logCallback(string.format("  parent bee -> chamber slot %d", toSlot))
+  end
 
   -- ==================== CYCLE LOOP ====================
   local collected = 0
@@ -257,12 +380,37 @@ function Breeding.run(logCallback)
     logCallback(string.format("  adult bee -> lab chest (%d/%d)", collected, CYCLES))
   end
 
-  -- ==================== FINISH ====================
-  logCallback(string.format("Breeding completed. %d adult bees added to lab chest.", collected))
-  chatMessage(string.format(
-    "Breeding complete: %d bees added to lab chest. Remove the parent bees from breeding chamber slots %d and %d manually.",
-    collected, CHAMBER_PARENT_SLOTS[1], CHAMBER_PARENT_SLOTS[2]), "e")
-  return true
+  -- ==================== AUTOMATION PULSE ====================
+  logCallback(string.format("Breeding cycles done. %d adult bees added to lab chest.", collected))
+
+  local relayName = lib.peripherals.clicker_breeding_relay
+  if type(relayName) ~= "string" or relayName == "" then
+    return fail("clicker_breeding_relay not defined in config")
+  end
+  local relay = peripheral.wrap(relayName)
+  if not relay then
+    return fail("breeding automation relay missing")
+  end
+  local method, useSides = detectRelayMethod(relayName, relay)
+  if not method then
+    return fail("breeding automation relay has no output method")
+  end
+  setRelayOutput(relay, method, useSides, true)
+  sleep(1)
+  setRelayOutput(relay, method, useSides, false)
+  logCallback("Automation pulse sent")
+  chatMessage("Automation pulse sent", "e")
+  sleep(2)
+
+  -- ==================== FINAL CHECK ====================
+  local finalBees = scanBeesInChest()
+  local finalCount = finalBees and #finalBees or 0
+  if finalCount == 5 then
+    logCallback("Breeding complete: 5 bees in lab chest.")
+    chatMessage("Breeding complete: 5 bees in lab chest.", "a")
+    return true
+  end
+  return fail(string.format("Parents did not return (bees in lab_chest: %d, expected 5)", finalCount))
 end
 
 return Breeding
