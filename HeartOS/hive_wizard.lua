@@ -247,7 +247,7 @@ local function chatSummary(map)
 end
 
 --- Collect one hive's three blocks and ask the player to confirm in chat.
---- @param globalTheirDevices table consecutive sets of peripherals to skip
+--- @param globalAllDevices table consecutive sets of peripherals to skip
 --- @param committed table set of peripherals already used
 --- @param idLabel string label to show (e.g. "id01" or new id)
 --- @param ui table|nil optional { mon, monSide } monitor UI for the Back button
