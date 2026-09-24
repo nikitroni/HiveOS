@@ -9,11 +9,16 @@ _paint/
 _test/
 _test.lua
 backups/
+
+# Sources (mirrored to BeeOS/LabOS/HeartOS by deploy.bat)
+0/
+1/
+2/
 4/
 
-# Runtime data (configs received from HeartOS, lab/bee state files)
-0/beeos_config.lua
-0/hives_map.lua
-0/lab_lock.dat
-1/labos_config.lua
-1/lab_state.dat
+# Runtime data / generated configs (any mirror)
+**/beeos_config.lua
+**/labos_config.lua
+**/hives_map.lua
+**/lab_state.dat
+**/lab_lock.dat
