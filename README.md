@@ -1,4 +1,4 @@
-[English](README.md) | [Русский](README.ru.md)
+[English](README.md) | [Русский](README.ru.md) | [License](LICENSE) | [Docs](docs/)
 
 ```bash
 wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua
@@ -33,7 +33,7 @@ Configuration changes follow the same pattern for BeeOS and LabOS. HeartOS first
 
 To keep the user interface responsive, long-running work never touches the render loop. BeeOS reads hives through an asynchronous worker (`HiveReader`) that survives a hanging `getBlockData`, while LabOS runs breeding, gene production and upgrades in a separate task worker. Results are delivered as rednet events, so a stuck peripheral never freezes the screen.
 
-A visual map of the network, including the bee hand-off from hive to lab, is shown below and expanded in [`docs/systems.md`](docs/systems.md).
+A visual map of the network, including the bee hand-off from hive to lab, is shown below and expanded in [Systems Documentation](docs/systems.md).
 
 ```mermaid
 flowchart LR
@@ -51,16 +51,16 @@ flowchart LR
 
 ## 📦 Requirements
 
-- **All the Mods 10 (ATM10)** as the base modpack, or a pack with the mods below.
-- **ComputerCraft: Tweaked** — the three computers and their monitors.
-- **Advanced Peripherals** — Block Readers and the chat box.
-- **Productive Bees** — hives, breeding chamber, incubator, gene indexer.
-- **Just Dire Things** — the clicker used to drive breeding automation.
-- **Modular Routers** — item routing around the lab and hives.
-- **Applied Energistics 2 (AE2)** — the resource interface that feeds honey treats.
-- **SuperFactoryManager (SFM)** — automation glue for larger farms.
-- **Ender IO** — conduits, power and machines around the farm.
-- **Item Collectors (or equivalent)** — pickup and routing of drops.
+- **All the Mods 10 (ATM10)** as the base modpack, or any modpack containing the mods listed below.
+- **ComputerCraft: Tweaked** — the core of the project.
+- **Advanced Peripherals** — additional peripheral devices.
+- **Productive Bees** — BEES!!!
+- **Just Dire Things** — breeding automation.
+- **Modular Routers** — item routing around the lab.
+- **Applied Energistics 2 (AE2)** — resource interface for supplying resources.
+- **SuperFactoryManager (SFM)** — logistics for large apiaries.
+- **Ender IO** — gene crafters.
+- **Item Collectors (or equivalent)** — drop collection and routing.
 
 Each terminal needs a **wireless modem** (advanced computer recommended). The mod list may grow as the project is adapted to new packs.
 
@@ -72,7 +72,7 @@ Each terminal needs a **wireless modem** (advanced computer recommended). The mo
 4. Pick the **role** when the installer asks (BeeOS / LabOS / HeartOS) and let it download the files.
 5. Run `reboot` on BeeOS and LabOS, then start the **wizard on HeartOS** to scan and configure the devices.
 
-Full step-by-step instructions, including cable and monitor placement, are in [`docs/setup.md`](docs/setup.md).
+Full step-by-step instructions, including cable and monitor placement, are in [Setup Guide](docs/setup.md).
 
 ## 🔧 Key systems
 
@@ -80,11 +80,11 @@ Full step-by-step instructions, including cable and monitor placement, are in [`
 - **Hive map** — HeartOS renders a paginated grid of every hive (48 per page, in three layout groups of 16) with live status colors, and can pulse the relay of a selected hive so you can find it in the world.
 - **Genetics** — LabOS reads genes from the indexer, tops up missing ones via a redstone relay, and upgrades bees in crafters + incubator until they reach the elite target values.
 
-Details for all three systems are in [`docs/systems.md`](docs/systems.md).
+Details for all three systems are in [Systems Documentation](docs/systems.md).
 
 ## 📸 Screenshots
 
-> Placeholders below. See [`docs/screenshots/README.md`](docs/screenshots/README.md) for what each image must show and how to replace the URLs with real captures.
+> Placeholders below. See [Screenshots Guide](docs/screenshots/README.md) for what each image must show and how to replace the URLs with real captures.
 
 ![HeartOS main menu](https://placehold.co/800x450/1e1e1e/ffffff?text=HeartOS+Main+Menu)
 
@@ -101,14 +101,14 @@ Details for all three systems are in [`docs/systems.md`](docs/systems.md).
 ## 🗺️ Roadmap
 
 - **v1.0** — three terminals, hive map, breeding, genetics, installer and configuration wizard (done).
-- **v2.0 (goal)** — a portable management terminal instead of chat, and a universal hive map that adapts to any layout.
 - **v1.x** — flexible small quality-of-life improvements.
+- **v2.0 (goal)** — a portable management terminal instead of chat, and a universal hive map that adapts to any layout.
 
-The detailed roadmap is in [`docs/roadmap.md`](docs/roadmap.md).
+The detailed roadmap is in [Roadmap](docs/roadmap.md).
 
 ## 📄 License
 
-Released under the MIT License. See [`LICENSE`](LICENSE).
+Released under the MIT License. See [MIT License](LICENSE).
 
 ## 🙏 Credits
 

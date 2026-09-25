@@ -1,3 +1,5 @@
+[English](setup.md) | [Русский](setup.ru.md)
+
 # HiveOS — Setup Guide
 
 This guide walks you from three bare computers to a working hive farm. It assumes you are playing **All the Mods 10 (ATM10)** with ComputerCraft: Tweaked, Advanced Peripherals and the bee mods installed.

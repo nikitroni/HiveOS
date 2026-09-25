@@ -1,3 +1,5 @@
+[English](systems.md) | [Русский](systems.ru.md)
+
 # HiveOS — Systems
 
 This document describes the three internal systems of HiveOS: the terminal architecture, the breeding pipeline and the hive map.
