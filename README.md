@@ -23,7 +23,7 @@ HiveOS is a management layer for a bee farm built around a ComputerCraft network
 
 The system is designed for **All the Mods 10 (ATM10)** and its bee ecosystem (Productive Bees, Advanced Peripherals, Just Dire Things and friends), but the architecture is generic: all machine names come from configuration, and the heavy layout data lives in normal Lua tables, so the suite can be adapted to other modpacks with similar blocks.
 
-Every terminal communicates over wireless rednet with a small request/reply protocol, so you can place them anywhere in the base and rewire the farm by editing the config on the control terminal rather than editing scripts.
+Every terminal communicates over rednet with a small request/reply protocol, so you can place them anywhere in the base and rewire the farm by editing the config on the control terminal rather than editing scripts.
 
 ## 🖥️ Architecture
 
@@ -58,16 +58,16 @@ flowchart LR
 - **Just Dire Things** — breeding automation.
 - **Modular Routers** — item routing around the lab.
 - **Applied Energistics 2 (AE2)** — resource interface for supplying resources.
-- **SuperFactoryManager (SFM)** — logistics for large apiaries.
+- **SuperFactoryManager (SFM)** — automation for large apiaries.
 - **Ender IO** — gene crafters.
 - **Item Collectors (or equivalent)** — drop collection and routing.
 
-Each terminal needs a **wireless modem** (advanced computer recommended). The mod list may grow as the project is adapted to new packs.
+Each terminal needs a **Wired Modem + Networking Cable connected to each terminal** (advanced computer recommended). The mod list may grow as the project is adapted to new packs.
 
 ## 🚀 Installation
 
 1. Craft and place **three computers** with their monitors: one for HeartOS, one for BeeOS, one for LabOS.
-2. Attach a **wireless modem** to each computer and place the monitors where you want them.
+2. Connect a **Wired Modem + Networking Cable** to each terminal and place the monitors where you want them.
 3. On each computer run `wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua`.
 4. Pick the **role** when the installer asks (BeeOS / LabOS / HeartOS) and let it download the files.
 5. Run `reboot` on BeeOS and LabOS, then start the **wizard on HeartOS** to scan and configure the devices.

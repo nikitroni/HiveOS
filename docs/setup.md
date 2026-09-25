@@ -22,7 +22,7 @@ HiveOS uses three independent terminals:
 | **BeeOS** | `BeeOS/` | Reads the hives and shows them on the tech / info monitors. |
 | **LabOS** | `LabOS/` | Runs breeding and genetics on the lab monitor and four button monitors. |
 
-Each terminal is just a computer with a wireless modem; all coordination happens over rednet.
+Each terminal is just a computer with a wired modem; all coordination happens over rednet.
 
 ## Step 1 — Place the three computers
 
@@ -36,9 +36,9 @@ Advanced computers are recommended for the extra colors, but normal computers wo
 
 ## Step 2 — Connect the modems
 
-Attach a **wireless modem** to each computer (any free side works). HiveOS finds the modem automatically, so there is nothing to configure for the network itself.
+Connect a **Wired Modem + Networking Cable** to each terminal (any free side works). HiveOS finds the modem automatically, so there is nothing to configure for the network itself.
 
-Make sure all three computers are within wireless range of each other. If the modem is not found, the terminal prints a startup error on screen.
+Make sure every terminal's modem is connected to the same Networking Cable. If the modem is not found, the terminal prints a startup error on screen.
 
 ## Step 3 — Install HiveOS on each terminal
 

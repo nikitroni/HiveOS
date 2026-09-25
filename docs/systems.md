@@ -12,9 +12,9 @@ This document describes the three internal systems of HiveOS: the terminal archi
 
 HiveOS is split into three roles so that no single terminal has to do everything.
 
-- **HeartOS** (`2/`) is the control center. It owns the device registry in `device_types.lua` (the single source of truth for which peripherals can be provisioned, grouped into `beeos`, `labos` and `hives`), stores configs as plain Lua tables, and hosts the configuration wizards and the visual hive map.
-- **BeeOS** (`0/`) owns the hive screens. A tech monitor shows the hive list and a detail view; one or more info monitors show a compact hive overview. It also sends bees to the lab and receives them back.
-- **LabOS** (`1/`) owns the breeding and genetics pipeline. It drives the main lab monitor and four animated button monitors: `bee_out`, `gene_upgrade`, `gene_produce` and `breed`.
+- **HeartOS** (control terminal) is the control center. It owns the device registry in `device_types.lua` (the single source of truth for which peripherals can be provisioned, grouped into `beeos`, `labos` and `hives`), stores configs as plain Lua tables, and hosts the configuration wizards and the visual hive map.
+- **BeeOS** (hive monitoring terminal) owns the hive screens. A tech monitor shows the hive list and a detail view; one or more info monitors show a compact hive overview. It also sends bees to the lab and receives them back.
+- **LabOS** (lab terminal) owns the breeding and genetics pipeline. It drives the main lab monitor and four animated button monitors: `bee_out`, `gene_upgrade`, `gene_produce` and `breed`.
 
 ### Config protocol
 
