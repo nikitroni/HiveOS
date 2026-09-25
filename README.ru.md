@@ -1,4 +1,4 @@
-[English](README.md) | [Русский](README.ru.md) | [License](LICENSE) | [Docs](docs/)
+[English](README.md) | [Русский](README.ru.md) | [Docs](docs/)
 
 ```bash
 wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua
