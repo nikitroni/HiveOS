@@ -1,16 +1,16 @@
 -- lab_lib.lua
--- Библиотека LabOS: вся статичная информация терминала в одном месте.
--- Содержит: генетику пчёл, раскладку HUD, координаты панелей, лог, ДНК,
--- слоты процессора, настройки реле и ресурсов.
+-- LabOS library: all static terminal information in one place.
+-- Contains: bee genetics, HUD layout, panel coordinates, log, DNA,
+-- processor slots, relay and resource settings.
 --
--- Периферийные устройства сюда НЕ записываются: они приходят от HeartOS в
--- labos_config.lua, а адаптер lab_config_loader.lua кладёт их в lab.peripherals.
+-- Peripherals are NOT written here: they come from HeartOS in
+-- labos_config.lua, and the lab_config_loader.lua adapter puts them into lab.peripherals.
 
 local lab = {}
 
--- ==================== ГЕНЕТИКА (ранее lab_genetics.lua) ====================
+-- ==================== GENETICS (formerly lab_genetics.lua) ====================
 
--- Целевые элитные значения генов
+-- Target elite gene values
 lab.ELITE = {
     productivity = "productivity.very_high",
     endurance = "endurance.strong",
@@ -18,7 +18,7 @@ lab.ELITE = {
     weather_tolerance = "weather_tolerance.any"
 }
 
--- Цвета уровней генов
+-- Gene level colors
 lab.levelColors = {
     normal   = colors.green,
     medium   = colors.blue,
@@ -34,14 +34,14 @@ lab.levelColors = {
     any      = colors.red
 }
 
--- Цвет уровня гена по имени и значению
+-- Gene level color by name and value
 function lab.getGeneLevelColor(geneName, level)
-    -- level может быть строкой вида "productivity.normal" или просто "normal"
+    -- level may be a string like "productivity.normal" or just "normal"
     local pureLevel = level:match("%.(.+)$") or level
     return lab.levelColors[pureLevel] or colors.white
 end
 
--- Форматирование имени пчелы
+-- Bee name formatting
 function lab.formatBeeName(rawType)
     if not rawType then return "Unknown" end
     local name = rawType:gsub("^productivebees:", "")
@@ -56,14 +56,14 @@ function lab.formatBeeName(rawType)
     return name
 end
 
--- ==================== ПЕРИФЕРИЯ ====================
--- Имена периферии НЕ хранятся здесь: они приходят от HeartOS в
--- labos_config.lua, а адаптер lab_config_loader.lua кладёт их сюда.
--- Если конфига ещё нет - этот блок пуст, терминал ждёт конфиг
--- (см. LAB_main.lua - printConfigStatus).
+-- ==================== PERIPHERALS ====================
+-- Peripheral names are NOT stored here: they come from HeartOS in
+-- labos_config.lua, and the lab_config_loader.lua adapter puts them here.
+-- If there is no config yet - this block is empty, the terminal waits for the config
+-- (see LAB_main.lua - printConfigStatus).
 lab.peripherals = {}
 
--- ==================== КАРТОЧКИ ПЧЁЛ (5 ячеек) ====================
+-- ==================== BEE CARDS (5 cells) ====================
 lab.bee_grid = {
     start_x = 1,
     start_y = 16,
@@ -71,13 +71,13 @@ lab.bee_grid = {
     offset_x = 14,
     offset_y = 11,
     offsets = {
-        title = { x = 1, y = 1 },               -- имя пчелы (или " --EMPTY-- ")
-        -- Заголовки генов
+        title = { x = 1, y = 1 },               -- bee name (or " --EMPTY-- ")
+        -- Gene headers
         gene_Productivity     = { x = 1, y = 2 },
         gene_W_Tolerance      = { x = 1, y = 4 },
         gene_Behavior         = { x = 1, y = 6 },
         gene_Endurance        = { x = 1, y = 8 },
-        -- Значения генов (текст уровня)
+        -- Gene values (level text)
         gene_Productivity_val = { x = 1, y = 3 },
         gene_W_Tolerance_val  = { x = 1, y = 5 },
         gene_Behavior_val     = { x = 1, y = 7 },
@@ -85,36 +85,36 @@ lab.bee_grid = {
     },
 }
 
--- ==================== ОБЛАСТЬ ЛОГА (9 строк + заголовок) ====================
+-- ==================== LOG AREA (9 rows + title) ====================
 lab.log_area = {
     start_x = 23,
     start_y = 3,
-    width   = 22,   -- ширина в символах
-    height  = 10,   -- всего строк (включая заголовок)
+    width   = 22,   -- width in characters
+    height  = 10,   -- total rows (including the title)
     title   = "<<<<<<UPGRADE LOG>>>>>>",
-    title_y = 3,    -- Y для заголовка (обычно совпадает с start_y)
-    -- Координаты для содержимого (9 строк)
+    title_y = 3,    -- Y for the title (usually matches start_y)
+    -- Coordinates for the content (9 rows)
     content_x = 23,
-    content_y = 4,  -- первая строка лога
+    content_y = 4,  -- first log row
     content_height = 9,
 }
 
--- ==================== ДНК-ЦЕПОЧКИ ====================
+-- ==================== DNA STRANDS ====================
 lab.dna = {
-    left_start_x = 20,   -- X первой цепочки
-    right_start_x = 46,  -- X второй цепочки (20 + 26)
+    left_start_x = 20,   -- X of the first strand
+    right_start_x = 46,  -- X of the second strand (20 + 26)
     start_y = 3,
-    height = 10,          -- сколько строк занимает
-    -- Остальные параметры (символы, цвета) заданы в коде анимации
+    height = 10,          -- how many rows it occupies
+    -- Other parameters (characters, colors) are set in the animation code
 }
 
--- ==================== ПАНЕЛЬ ИНДЕКСЕРА (GENE INDEXER) ====================
+-- ==================== INDEXER PANEL (GENE INDEXER) ====================
 lab.gene_indexer_panel = {
     start_x = 3,
     start_y = 3,
     width   = 17,
     height  = 10,
-    title_chars = {   -- для цветной надписи
+    title_chars = {   -- for the colored caption
         {char="G", x=3, col=colors.red},
         {char="E", x=4, col=colors.orange},
         {char="N", x=5, col=colors.yellow},
@@ -127,7 +127,7 @@ lab.gene_indexer_panel = {
         {char="E", x=13, col=colors.purple},
         {char="R", x=14, col=colors.purple},
     },
-    -- Позиции для вывода количества генов
+    -- Positions for outputting gene counts
     genes = {
         { name = "Productivity",   key = "productivity",      name_x = 0, name_y = 2, level_x = 0, level_y = 3, count_x = 10, count_y = 3 },
         { name = "Endurance",      key = "endurance",         name_x = 0, name_y = 4, level_x = 0, level_y = 5, count_x = 10, count_y = 5 },
@@ -136,7 +136,7 @@ lab.gene_indexer_panel = {
     },
 }
 
--- ==================== ПАНЕЛЬ ПОТРЕБНОСТЕЙ (BEE GENETICS) ====================
+-- ==================== NEEDS PANEL (BEE GENETICS) ====================
 lab.bee_genetics_panel = {
     start_x = 49,
     start_y = 3,
@@ -155,7 +155,7 @@ lab.bee_genetics_panel = {
         {char="C", x=13, col=colors.purple},
         {char="S", x=14, col=colors.cyan},
     },
-    -- Позиции для вывода надписей "Need:" и значений
+    -- Positions for outputting "Need:" labels and values
     needs = {
         { name = "Productivity",   key = "productivity",       name_x = 4, name_y = 2, need_x = 0, need_y = 3, count_x = 15, count_y = 3 },
         { name = "Endurance",      key = "endurance",          name_x = 5, name_y = 4, need_x = 0, need_y = 5, count_x = 15, count_y = 5 },
@@ -164,12 +164,12 @@ lab.bee_genetics_panel = {
     },
 }
 
--- ==================== ЗАГЛУШКИ И ФОРМАТЫ ====================
+-- ==================== PLACEHOLDERS AND FORMATS ====================
 lab.labels = {
-    no_bee = " -- EMPTY-- ",   -- отображается в ячейке, если пчелы нет
+    no_bee = " -- EMPTY-- ",   -- shown in a cell if there is no bee
 }
 
--- ==================== ПРОЦЕССОР (слоты и тайминги) ====================
+-- ==================== PROCESSOR (slots and timings) ====================
 lab.processor = {
     gene_start_slot = 3,
     honey_crafter_slot = 2,
@@ -183,7 +183,7 @@ lab.processor = {
     incubate_timeout = 10,
 }
 
--- ==================== НАСТРОЙКИ РЕЛЕ И ПРОИЗВОДСТВА ГЕНОВ ====================
+-- ==================== RELAY AND GENE PRODUCTION SETTINGS ====================
 lab.relay_sides = {"back", "top", "front"}
 lab.target_gene_count = 64
 lab.min_resources = 32
@@ -192,14 +192,14 @@ lab.resource_items = {
     "productivebees:honey_treat",
 }
 lab.relay_cycle = {
-    phase1_back_top_duration = 5,          -- длительность фазы 1 (back и top включены)
-    phase2_delay = 0.5,                    -- пауза между фазами
-    phase2_front_duration = 6,             -- длительность фазы 2 (пульсация на front)
-    phase2_front_pulse_duration = 0.5,     -- длительность импульса на front в фазе 2
-    phase2_front_pulse_interval = 1,       -- интервал между импульсами в фазе 2
+    phase1_back_top_duration = 5,          -- duration of phase 1 (back and top on)
+    phase2_delay = 0.5,                    -- pause between phases
+    phase2_front_duration = 6,             -- duration of phase 2 (pulsing on front)
+    phase2_front_pulse_duration = 0.5,     -- front pulse duration in phase 2
+    phase2_front_pulse_interval = 1,       -- interval between pulses in phase 2
 }
 
--- ==================== СЛУЖЕБНОЕ ====================
+-- ==================== MISCELLANEOUS ====================
 lab.chat_box = "chat_box_0"
 lab.bg_file = "HUD_lab.nfp"
 

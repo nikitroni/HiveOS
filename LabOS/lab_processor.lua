@@ -36,6 +36,12 @@ local function chatMessage(msg, isError)
 end
 
 -- ==================== SAFE PERIPHERAL HELPERS ====================
+--- @param src table wrapped inventory
+--- @param dstName string destination peripheral name
+--- @param srcSlot number
+--- @param count number
+--- @param dstSlot number|nil
+--- @return number
 local function pushOnce(src, dstName, srcSlot, count, dstSlot)
     if not src then return 0 end
     local ok, moved = pcall(function()
@@ -46,6 +52,13 @@ local function pushOnce(src, dstName, srcSlot, count, dstSlot)
 end
 
 -- Move items with a few retries; never raises, returns 0 on failure.
+--- @param src table wrapped inventory
+--- @param dstName string destination peripheral name
+--- @param srcSlot number
+--- @param count number
+--- @param dstSlot number|nil
+--- @param attempts number|nil
+--- @return number
 local function pushRetry(src, dstName, srcSlot, count, dstSlot, attempts)
     attempts = attempts or 3
     local moved = 0
@@ -57,6 +70,8 @@ local function pushRetry(src, dstName, srcSlot, count, dstSlot, attempts)
     return moved
 end
 
+--- @param cont table wrapped inventory
+--- @return number|nil
 local function findFreeSlot(cont)
     if not cont then return nil end
     local okSize, size = pcall(function() return cont.size() end)
@@ -69,6 +84,10 @@ local function findFreeSlot(cont)
 end
 
 -- Wait until a slot becomes occupied, or return nil on timeout.
+--- @param cont table wrapped inventory
+--- @param slot number
+--- @param timeout number seconds
+--- @return table|nil
 local function waitForItem(cont, slot, timeout)
     if not cont then return nil end
     local deadline = os.clock() + (timeout or 0)
@@ -84,6 +103,9 @@ end
 -- Only the given slots are inspected (never the whole inventory), and moves are
 -- single-attempt (no retries) so an unextractable slot fails fast.
 -- Returns: leftover (number), details (string describing stuck slots).
+--- @param cont table wrapped inventory
+--- @param routes table array of { slot, target }
+--- @return number, string
 local function clearWithRoutes(cont, routes)
     if not cont then return 0, "" end
     local leftover = 0
@@ -112,11 +134,15 @@ end
 -- before use: any occupied input slot means the crafter is clogged.
 
 -- Move a leftover crafted result out of the crafter (output is extractable).
+--- @param crafter table wrapped crafter peripheral
+--- @return number, string
 local function clearCrafterOutput(crafter)
     return clearWithRoutes(crafter, { { slot = resultCrafterSlot, target = indexerName } })
 end
 
 -- List occupied crafter input slots (genes + honey). They cannot be cleared.
+--- @param crafter table wrapped crafter peripheral
+--- @return table
 local function crafterClogDetails(crafter)
     local occupied = {}
     local slots = { honeyCrafterSlot, geneStartSlot, geneStartSlot + 1, geneStartSlot + 2, geneStartSlot + 3 }
@@ -130,6 +156,7 @@ local function crafterClogDetails(crafter)
 end
 
 -- Flag the batch as clogged if the crafter inputs still hold anything.
+--- @param crafter table wrapped crafter peripheral
 local function updateClogFlag(crafter)
     if #crafterClogDetails(crafter) > 0 then
         crafterClogged = true
@@ -138,6 +165,8 @@ end
 
 -- Incubator input slots (bee/gene) cannot be extracted either; only the output
 -- slot (upgraded bee) can be pulled out.
+--- @param incubator table wrapped incubator peripheral
+--- @return table
 local function incubatorClogDetails(incubator)
     local occupied = {}
     for _, slot in ipairs({ incubatorBeeSlot, incubatorGeneSlot }) do
@@ -161,6 +190,7 @@ end
 
 -- Find the indexer slot holding a 100% pure gene of the given attribute.
 function Processor.findGeneSlot(attr)
+    --- @type table
     local reader = peripheral.wrap(lib.peripherals.reader_indexer)
     if not reader then return nil end
     local ok, data = pcall(function() return reader.getBlockData() end)
@@ -194,6 +224,7 @@ function Processor.processBee(bee, logCallback)
         chatMessage("No crafter for " .. geneCount .. " genes", true)
         return false, "no_crafter"
     end
+    --- @type table
     local crafter = peripheral.wrap(crafterName)
     if not crafter then
         logCallback("crafter not found")
@@ -201,6 +232,7 @@ function Processor.processBee(bee, logCallback)
         return false, "no_crafter"
     end
 
+    --- @type table
     local barrel = peripheral.wrap(barrelName)
     if not barrel then
         logCallback("barrel not found")
@@ -229,6 +261,7 @@ function Processor.processBee(bee, logCallback)
 
     -- Incubator input slots (bee/gene) cannot be extracted: any occupancy means it
     -- is clogged, so stop and ask for a manual cleanup.
+    --- @type table
     local incubator = peripheral.wrap(incubatorName)
     if incubator then
         local incClog = incubatorClogDetails(incubator)
@@ -292,6 +325,7 @@ function Processor.processBee(bee, logCallback)
     end
 
     -- Load honey_treat
+    --- @type table
     local resourceChest = peripheral.wrap(resourceChestName)
     if not resourceChest then
         logCallback("ERROR: resource chest nil")
@@ -348,6 +382,7 @@ function Processor.processBee(bee, logCallback)
     end
 
     -- Move result and bee into the incubator
+    --- @type table
     local incubator2 = incubator or peripheral.wrap(incubatorName)
     if not incubator2 then
         logCallback("incubator not found")

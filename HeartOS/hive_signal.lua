@@ -51,7 +51,7 @@ end
 --- probe fails we fall back to all-sides digital/bundled/analog.
 --- @param name string peripheral name
 --- @param p table wrapped peripheral
---- @return string method, boolean useSides
+--- @return string|nil method, boolean useSides
 local function detectMethod(name, p)
   local ok, methods = pcall(function()
     return peripheral.getMethods(name)
@@ -123,6 +123,7 @@ function HiveSignal.start(cycle, relayNames)
 
   local relays = {}
   for _, name in ipairs(relayNames) do
+    --- @type table
     local p = peripheral.wrap(name)
     if not p then
       ChatUtil.sendErrorImmediate("Relay peripheral not found: " .. ChatUtil.device(name))

@@ -38,7 +38,7 @@ function MainMenu.show(mon, heartConfig)
 
         HudUtil.drawLabel(mon, "main_menu", "hint")
 
-        -- Обработка нажатий
+        -- Touch handling
         local ok, event, side, tx, ty = pcall(os.pullEvent, "monitor_touch")
         if ok and side == heartConfig.main_monitor then
             local pressed = MonitorUtil.getPressedButton(buttons, tx, ty)

@@ -73,8 +73,8 @@ local function handleConfigMessage(sender, message)
       rednet.send(sender, currentStatus)
     elseif message == "freeze" then
       if currentStatus == "busy" then
-        -- Терминал занят задачей (отправка пчёл): не замораживаем,
-        -- Edit не должен открыться и прервать процесс.
+        -- Terminal is busy with a task (sending bees): do not freeze,
+        -- Edit must not open and interrupt the process.
         rednet.send(sender, "wait")
         return nil
       end
@@ -164,7 +164,7 @@ local function prepareScreen(mon, cfg)
   mon.setBackgroundColor(colors.gray)
   mon.clear()
   local oldTerm = term.redirect(mon)
-  -- drawImage + восстановление term ГАРАНТИРОВАННО (даже при ошибке)
+  -- drawImage + guaranteed term restore (even on error)
   local ok, err = pcall(paintutils.drawImage, bg, 1, 1)
   term.redirect(oldTerm)
   if not ok then error(tostring(err)) end
@@ -270,8 +270,8 @@ local function waitForConfig(monitors, isReady, onStatusChange, onMessage)
     table.insert(threads, function()
       pcall(prepareScreen, mon, cfg)
       while not release do
-        -- Плавная анимация 0% -> 100% -> 0% (синусоида, период 4 с).
-        -- Рисуем каждый кадр ровно как в проверенной первой версии.
+        -- Smooth animation 0% -> 100% -> 0% (sine wave, period 4 s).
+        -- Draw every frame exactly as in the verified first version.
         local p = (os.clock() % 4) / 4
         local wave = 0.5 - 0.5 * math.cos(p * math.pi * 2)
         pcall(drawProgress, mon, cfg, math.floor(wave * 100))
@@ -290,8 +290,8 @@ local function waitForConfig(monitors, isReady, onStatusChange, onMessage)
       if action then
         if onStatusChange then onStatusChange() end
       end
-      -- Выходим, когда условие готовности выполнено
-      -- (например, разморозка или пришли все конфиги)
+      -- Exit when the readiness condition is met
+      -- (e.g. unfreeze or all configs arrived)
       local ok, ready = pcall(isReady)
       if ok and ready then
         break

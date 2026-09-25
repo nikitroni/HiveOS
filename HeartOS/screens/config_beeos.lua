@@ -16,8 +16,8 @@ local COLORS = MonitorUtil.COLORS
 
 local CONFIG_FILE = "beeos_config.lua"
 
---- Отправить конфиг в BeeOS. Если терминал был заморожен (frozen=true) —
---- использовать update_config + unfreeze. Иначе — старый request_config.
+--- Send the config to BeeOS. If the terminal was frozen (frozen=true) -
+--- use update_config + unfreeze. Otherwise - the old request_config.
 local function trySendConfig(mon, heartConfig, startY, protocol, frozen)
     protocol = protocol or ConfigManager.PROTOCOL.beeos
     local config, _ = ConfigManager.loadFromFile(CONFIG_FILE)
@@ -30,7 +30,7 @@ local function trySendConfig(mon, heartConfig, startY, protocol, frozen)
     local ok, msg
     if frozen then
         ok, msg = ConfigManager.sendUpdateConfig(protocol, config)
-        ConfigManager.unfreezeTerminal(protocol)  -- best effort: размораживаем в любом случае
+        ConfigManager.unfreezeTerminal(protocol)  -- best effort: unfreeze in any case
         if ok then
             ChatUtil.sendSuccess("Config sent to BeeOS!")
             MonitorUtil.drawText(mon, 2, startY, "Sent to BeeOS!", COLORS.success)
@@ -50,11 +50,11 @@ local function trySendConfig(mon, heartConfig, startY, protocol, frozen)
     end
 end
 
---- Заморозить BeeOS перед редактированием.
---- Защита от редактирования занятого терминала встроена в freeze:
---- если терминал занят задачей, он ответит "wait" (не "frozen") и мастер
---- не откроется. При свободном терминале - freeze успешен.
---- Возвращает protocol, ok.
+--- Freeze BeeOS before editing.
+--- Protection against editing a busy terminal is built into freeze:
+--- if the terminal is busy with a task, it will reply "wait" (not "frozen") and the wizard
+--- will not open. With a free terminal - freeze succeeds.
+--- Returns protocol, ok.
 local function freezeForEdit(heartConfig)
     local protocol = ConfigManager.PROTOCOL.beeos
 
@@ -66,7 +66,7 @@ local function freezeForEdit(heartConfig)
     return protocol, true
 end
 
---- Получить цвет для группы по индексу (циклически)
+--- Get the color for a group by index (cyclically)
 local function getGroupColor(index)
     local colors = { colors.orange, colors.green, colors.blue, colors.purple, colors.yellow, colors.cyan, colors.pink, colors.lightGray }
     return colors[((index - 1) % #colors) + 1]
@@ -127,8 +127,8 @@ local function editBeeOSConfig(mon, heartConfig)
         end
     end
 
-    -- Замораживаем BeeOS на время редактирования
-    -- (если терминал занят - freezeForEdit вернёт nil и мастер не запускаем)
+    -- Freeze BeeOS during editing
+    -- (if the terminal is busy - freezeForEdit returns nil and we don't start the wizard)
     local protocol, frozen = freezeForEdit(heartConfig)
     if not protocol then
         return
@@ -142,7 +142,7 @@ local function editBeeOSConfig(mon, heartConfig)
         config.peripherals or {},
         function(updatedDevices)
             local newConfig = {}
-            -- Копируем остальные поля (ключа, метаданные), обновляем peripherals
+            -- Copy the remaining fields (keys, metadata), update peripherals
             for k, v in pairs(config) do
                 newConfig[k] = v
             end
@@ -176,8 +176,8 @@ local function createBeeOSConfig(mon, heartConfig)
         end
     end
 
-    -- Замораживаем BeeOS на время создания конфига
-    -- (если терминал занят - freezeForEdit вернёт nil и мастер не запускаем)
+    -- Freeze BeeOS while creating the config
+    -- (if the terminal is busy - freezeForEdit returns nil and we don't start the wizard)
     local protocol, frozen = freezeForEdit(heartConfig)
     if not protocol then
         return

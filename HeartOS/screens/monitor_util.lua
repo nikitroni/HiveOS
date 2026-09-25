@@ -152,14 +152,14 @@ end
 
 -- ==================== GROUP LINE ====================
 
---- Нарисовать строку "key: values" с переносом если не влезает в одну строку
---- Возвращает следующую свободную строку y
+--- Draw a "key: values" line, wrapping if it does not fit on one line
+--- Returns the next free row y
 function MonitorUtil.drawGroupLine(mon, x, y, key, values, groupColor, maxWidth)
     local prefix = key .. ": "
     local prefixLen = #prefix
     local display = type(values) == "table" and table.concat(values, ", ") or tostring(values)
 
-    -- Пробуем уместить всё в одну строку
+    -- Try to fit everything on one line
     local oneLine = prefix .. display
     if #oneLine <= maxWidth then
         MonitorUtil.drawText(mon, x, y, prefix, groupColor)
@@ -167,7 +167,7 @@ function MonitorUtil.drawGroupLine(mon, x, y, key, values, groupColor, maxWidth)
         return y + 1
     end
 
-    -- Не влезло: помещаем prefix + сколько влезет display на первой строке
+    -- Did not fit: put prefix + as much display as fits on the first line
     local canFit = maxWidth - prefixLen
     if canFit < 1 then canFit = 1 end
     if canFit >= #display then
@@ -176,7 +176,7 @@ function MonitorUtil.drawGroupLine(mon, x, y, key, values, groupColor, maxWidth)
         return y + 1
     end
 
-    -- Берём максимум display, стараясь разорвать по пробелу
+    -- Take the maximum display, trying to break at a space
     local take = canFit
     local sub = display:sub(1, take)
     local lastSpace = sub:match("^.*%s")
@@ -191,7 +191,7 @@ function MonitorUtil.drawGroupLine(mon, x, y, key, values, groupColor, maxWidth)
 
     MonitorUtil.drawText(mon, x, y, prefix .. firstPart, groupColor)
 
-    -- Остаток display с переносом (на полную ширину, без отступа prefix)
+    -- Remaining display wrapped (full width, without the prefix indent)
     y = y + 1
     local remainingWidth = maxWidth
     if remainingWidth < 2 then remainingWidth = 2 end
@@ -371,9 +371,9 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
         if #oneLine <= listW then
             table.insert(lines, {prefix = prefix, display = display, prefixLen = prefixLen, color = item.color})
         else
-            -- Не влезло: помещаем максимум display на первой строке вместе с prefix
+            -- Did not fit: put the maximum display on the first line together with prefix
             local remaining = display
-            local canFit = listW - prefixLen -- сколько символов display помещается на первой строке
+            local canFit = listW - prefixLen -- how many display characters fit on the first line
             if canFit > 0 then
                 local take = canFit
                 if take > #remaining then take = #remaining end
@@ -390,7 +390,7 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
                 table.insert(lines, {prefix = prefix, display = "", prefixLen = prefixLen, color = item.color})
             end
 
-            -- Остаток display на следующих строках (без отступа prefix)
+            -- Remaining display on the following lines (without the prefix indent)
             local lineWidth = listW
             if lineWidth < 2 then lineWidth = 2 end
             while #remaining > 0 do
@@ -424,12 +424,12 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
     end
     local totalPages = math.max(1, math.ceil(totalLines / linesPerPage))
 
-    -- Если влезает на одну страницу — ограничиваем linesPerPage, чтобы drawnY не вылез за кнопки
+    -- If it fits on one page - limit linesPerPage so drawnY does not go past the buttons
     if totalPages <= 1 then
         linesPerPage = math.min(linesPerPage, totalLines)
     end
 
-    -- Если нет данных — рисуем сообщение и (если interactive) ждём Back
+    -- If there is no data - draw a message and (if interactive) wait for Back
     if totalLines == 0 then
         MonitorUtil.clearScreen(mon)
         if screenId then

@@ -1,13 +1,13 @@
 -- chat_notify.lua
--- Отправка сообщений в чат-бокс для BeeOS, по образцу HeartOS chat_util.lua:
---   - MOTD-цвета через UTF-8 section sign (C2 A7 = real "§")
---   - префикс "[BeeOS]" через опции sendMessage { prefix = "BeeOS", utf8 = true }
---     (новый AP 0.8+), с автодетектом формата (new/legacy/plain).
---   - sendError -> красный, sendInfo -> белый, sendSuccess -> зелёный.
+-- Send messages to the chat box for BeeOS, following HeartOS chat_util.lua:
+--   - MOTD colors via UTF-8 section sign (C2 A7 = real "§")
+--   - prefix "[BeeOS]" via sendMessage options { prefix = "BeeOS", utf8 = true }
+--     (new AP 0.8+), with format autodetection (new/legacy/plain).
+--   - sendError -> red, sendInfo -> white, sendSuccess -> green.
 
 local ChatNotify = {}
 
--- UTF-8 section sign (byte sequence C2 A7), идентично chat_util.lua
+-- UTF-8 section sign (byte sequence C2 A7), identical to chat_util.lua
 local SECTION_SIGN = "\194\167"
 local MOTD = {
     white  = SECTION_SIGN .. "f",
@@ -17,13 +17,14 @@ local MOTD = {
     darkGreen = SECTION_SIGN .. "2",
 }
 
--- Терминальный тег в скобках перед сообщением: "[BeeOS] сообщение"
+-- Terminal tag in brackets before the message: "[BeeOS] message"
 local TERMINAL_TAG = "BeeOS"
 
-local chatBox = nil
+--- @type table
+local chatBox
 local sendFormat = nil
 
---- Найти и обернуть чат-бокс (по имени из beeos_config или поиском).
+--- Find and wrap the chat box (by name from beeos_config or by search).
 --- @return boolean
 function ChatNotify.init()
     local cfg = nil
@@ -46,7 +47,7 @@ function ChatNotify.init()
         return true
     end
 
-    -- Поиск любого периферийского с sendMessage
+    -- Search for any peripheral with sendMessage
     for _, name in ipairs(peripheral.getNames()) do
         local methods = peripheral.getMethods(name)
         for _, m in ipairs(methods or {}) do
@@ -59,7 +60,7 @@ function ChatNotify.init()
     return false
 end
 
---- Внутренняя отправка с автодетектом формата API чат-бокса.
+--- Internal send with autodetection of the chat box API format.
 local function send(message)
     if not chatBox then
         if not ChatNotify.init() then return false end
@@ -74,8 +75,8 @@ local function send(message)
             chatBox.sendMessage(message)
         end)
     else
-        -- Пробуем новый формат (AP 0.8+): options-map с prefix и utf8.
-        -- prefixColor поддерживается не всеми сборками - при неудаче пробуем без него.
+        -- Try the new format (AP 0.8+): options-map with prefix and utf8.
+        -- prefixColor is not supported by all builds - on failure try without it.
         local okNew, errNew = pcall(function()
             chatBox.sendMessage(message, { prefix = TERMINAL_TAG, prefixColor = "yellow", utf8 = true })
         end)
@@ -104,17 +105,17 @@ local function send(message)
     end
 end
 
---- Белый информационный текст
+--- White informational text
 function ChatNotify.sendInfo(message)
     send(MOTD.white .. message)
 end
 
---- Зелёный текст успеха
+--- Green success text
 function ChatNotify.sendSuccess(message)
     send(MOTD.green .. message)
 end
 
---- Красный текст ошибки
+--- Red error text
 function ChatNotify.sendError(message)
     send(MOTD.red .. message)
 end

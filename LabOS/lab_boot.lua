@@ -1,10 +1,10 @@
 -- lab_boot.lua
--- Экран ожидания LabOS: рисуется фон HUD_Lab_Boot.nfp на главном мониторе,
--- поверх - плавно анимированная цветная полоса загрузки.
--- Координаты полосы (из макета): x=20, y=16, w=33, h=9.
--- Цифры процента НЕ выводятся - только шкала.
--- Дополнительно: забавная анимация "колбочек" - области на фоне заливки
--- случайными яркими цветами (координаты задаются в таблице FLASKS ниже).
+-- LabOS wait screen: the HUD_Lab_Boot.nfp background is drawn on the main monitor,
+-- on top - a smoothly animated colored loading bar.
+-- Bar coordinates (from the layout): x=20, y=16, w=33, h=9.
+-- Percentage digits are NOT displayed - only the scale.
+-- Additionally: a fun "flasks" animation - areas on the background filled
+-- with random bright colors (coordinates are set in the FLASKS table below).
 
 local BOOT_FILE = "HUD_Lab_Boot.nfp"
 
@@ -15,21 +15,21 @@ local BAR = {
     h = 9,
 }
 
--- Области колбочек для случайной яркой заливки (забавная анимация).
--- Колба 1 (левая): нижняя ёмкость + горлышко; колба 2 (правая): то же.
--- Каждая клетка в этих областях меняет цвет в каждом кадре.
+-- Flask areas for random bright fill (fun animation).
+-- Flask 1 (left): lower vessel + neck; flask 2 (right): same.
+-- Each cell in these areas changes color every frame.
 local FLASKS = {
-    -- Колба 1 (левая): ёмкость
+    -- Flask 1 (left): vessel
     { x = 5,  y = 13, w = 7, h = 5 },
-    -- Колба 1 (левая): горлышко
+    -- Flask 1 (left): neck
     { x = 7,  y = 10, w = 3, h = 3 },
-    -- Колба 2 (правая): ёмкость
+    -- Flask 2 (right): vessel
     { x = 61, y = 13, w = 7, h = 5 },
-    -- Колба 2 (правая): горлышко
+    -- Flask 2 (right): neck
     { x = 63, y = 10, w = 3, h = 3 },
 }
 
--- Палитра ярких цветов для колбочек
+-- Palette of bright colors for the flasks
 local FLASK_COLORS = {
     colors.red,
     colors.orange,
@@ -52,12 +52,12 @@ local function markPrepared(mon)
     preparedMonitors[mon] = true
 end
 
--- ==================== АНИМАЦИЯ КОЛБ (медленная) ====================
--- Набор цветов для всех клеток колб, который обновляется раз в
--- FLASK_INTERVAL секунд. Между обновлениями цвета стабильны -
--- анимация получается плавной и не рябит.
+-- ==================== FLASK ANIMATION (slow) ====================
+-- Set of colors for all flask cells, refreshed once every
+-- FLASK_INTERVAL seconds. Between refreshes the colors are stable -
+-- the animation turns out smooth and does not flicker.
 
-local FLASK_INTERVAL = 0.4   -- каждые 0.8 с набор цветов меняется
+local FLASK_INTERVAL = 0.4   -- every 0.4 s the color set changes
 
 local flaskCellColors = {}   -- [index] = color
 local flaskColorsTime = 0
@@ -65,7 +65,7 @@ local flaskColorsTime = 0
 local function ensureFlaskColors()
     local now = os.clock()
     if now - flaskColorsTime >= FLASK_INTERVAL then
-        -- пересчитываем общее число клеток
+        -- recalculate the total number of cells
         local total = 0
         for _, area in ipairs(FLASKS) do
             total = total + area.w * area.h
@@ -78,7 +78,7 @@ local function ensureFlaskColors()
     end
 end
 
--- Залить области колбочек: стабильные на интервал цвета.
+-- Fill the flask areas: colors stable for the interval.
 local function drawFlaskAnimation(mon)
     if #FLASKS == 0 then return end
     ensureFlaskColors()
@@ -97,7 +97,7 @@ local function drawFlaskAnimation(mon)
     end
 end
 
--- Полная очистка и отрисовка фона один раз на монитор (до анимации полосы)
+-- Full clear and background draw once per monitor (before the bar animation)
 function prepareScreen(mon)
     local bg = paintutils.loadImage(BOOT_FILE)
     if not bg then
@@ -113,7 +113,7 @@ function prepareScreen(mon)
     markPrepared(mon)
 end
 
--- Рисует полосу прогресса (только область полосы).
+-- Draws the progress bar (bar area only).
 -- percent: 0..100
 local function drawBar(mon, percent)
     local total = BAR.w * BAR.h
@@ -136,8 +136,8 @@ local function drawBar(mon, percent)
     end
 end
 
--- Один кадр анимации ожидания: только полоса (фон уже нарисован prepareScreen).
--- Плавная шкала 0% -> 100% -> 0%.
+-- One frame of the wait animation: only the bar (the background is already drawn by prepareScreen).
+-- Smooth scale 0% -> 100% -> 0%.
 function drawWaitFrame(mon)
     local ok = pcall(function()
         if not isPrepared(mon) then
@@ -151,7 +151,7 @@ function drawWaitFrame(mon)
     return ok
 end
 
--- Стартовая анимация фиксированной длительности
+-- Startup animation of fixed duration
 function show(mon, duration)
     duration = duration or 4
     prepareScreen(mon)

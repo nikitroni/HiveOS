@@ -1,20 +1,20 @@
 -- device_types.lua
--- Список типов периферии для поиска при создании конфига.
--- Каждый элемент описывает: что ищем, какой метод проверяем, сколько можно добавить.
--- Можно редактировать вручную: добавлять новые типы, менять методы проверки, лимиты.
+-- List of peripheral types to search for when creating a config.
+-- Each element describes: what we search for, which method we check, how many can be added.
+-- Can be edited manually: add new types, change check methods, limits.
 --
--- Формат:
+-- Format:
 -- {
---   key = "уникальный_ключ",                     -- ключ в конфиге
---   label = "Название для чата",                  -- что пишем в чат
---   checkMethods = {"метод1", "метод2"},           -- методы для проверки типа
---   max = 1 или nil,                               -- 1 = только один, nil = безлимит
---   group = "beeos" | "labos" | "hives",           -- к какой системе относится
+--   key = "unique_key",                          -- key in the config
+--   label = "Name for chat",                     -- what we write to chat
+--   checkMethods = {"method1", "method2"},        -- methods to check the type
+--   max = 1 or nil,                               -- 1 = only one, nil = unlimited
+--   group = "beeos" | "labos" | "hives",          -- which system it belongs to
 -- }
 --
--- ВНИМАНИЕ: все блоки из списка ОБЯЗАТЕЛЬНЫ к добавлению.
--- Пропустить блок нельзя — мастер будет запрашивать его, пока не получит.
--- Если какое-то устройство физически отсутствует — удали его из этого файла.
+-- ATTENTION: all blocks in the list are MANDATORY to add.
+-- A block cannot be skipped - the wizard will keep asking for it until it gets it.
+-- If some device is physically absent - delete it from this file.
 
 return {
     -- ==================== BEEOS ====================
@@ -184,8 +184,8 @@ return {
     },
 
     -- ==================== HIVES (HeartOS) ====================
-    -- Для каждого улья сканируются и добавляются 3 блока:
-    -- сам улей (hive_block), ридер (reader_block) и реле (relay_block).
+    -- For each hive 3 blocks are scanned and added:
+    -- the hive itself (hive_block), the reader (reader_block) and the relay (relay_block).
     {
         key = "hive_block",
         label = "Hive Block",

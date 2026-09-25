@@ -51,6 +51,7 @@ end
 
 function HiveReader.connectAll()
     for _, hive in ipairs(hives) do
+        --- @type table
         local reader = peripheral.wrap(hive.readerName)
         if reader then
             hive.reader = reader
@@ -87,7 +88,7 @@ local function readHive(hive)
 
         local data = {}
 
-        -- Пчёлы
+        -- Bees
         data.bees = {}
         if raw.bees then
             for _, bee in ipairs(raw.bees) do
@@ -96,7 +97,7 @@ local function readHive(hive)
                     if bee.entity_data.type then
                         beeData.type = bee.entity_data.type
                     end
-                    -- Ищем атрибуты в разных местах
+                    -- Look for attributes in different places
                     local attrHandler = nil
                     if bee.entity_data.NeoForgeData and bee.entity_data.NeoForgeData["productivebees:attributes_handler"] then
                         attrHandler = bee.entity_data.NeoForgeData["productivebees:attributes_handler"]
@@ -111,7 +112,7 @@ local function readHive(hive)
             end
         end
 
-        -- Апгрейды
+        -- Upgrades
         data.upgrades = {}
         if raw.upgrades and raw.upgrades.Items then
             for _, item in ipairs(raw.upgrades.Items) do
@@ -123,10 +124,10 @@ local function readHive(hive)
             end
         end
 
-        -- Расчёт процента заполнения инвентаря (только слоты 2-10)
+        -- Calculate inventory fill percentage (slots 2-10 only)
         data.inventoryPercent = 0
         if raw.inv and raw.inv.Items then
-            -- Отфильтровываем предметы, лежащие в слотах 2-10
+            -- Filter out items located in slots 2-10
             local filteredItems = {}
             for _, item in ipairs(raw.inv.Items) do
                 if item.Slot and item.Slot >= 2 and item.Slot <= 10 then
@@ -187,23 +188,23 @@ function HiveReader.forceUpdate()
     lastUpdate = os.clock()
 end
 
--- ==================== АСИНХРОННОЕ ЧТЕНИЕ (воркер) ====================
--- getBlockData может "зависнуть" навсегда (блок не отвечает), и в едином
--- потоке это полностью заморозило бы терминал (pcall от зависания НЕ спасает).
--- Поэтому живые циклы (tech/info) НЕ читают данные сами, а запрашивают чтение
--- у воркера, который крутится в отдельном потоке через parallel.waitForAny.
--- Если чтение зависло — остаётся висеть ТОЛЬКО воркер, UI продолжает жить,
--- а результаты приходят событием HiveReader.READ_COMPLETE (когда дойдут).
+-- ==================== ASYNCHRONOUS READING (worker) ====================
+-- getBlockData may "hang" forever (the block does not respond), and in a single
+-- thread this would completely freeze the terminal (pcall does NOT save from a hang).
+-- Therefore the live loops (tech/info) do NOT read data themselves, but request
+-- a read from the worker, which runs in a separate thread via parallel.waitForAny.
+-- If a read hangs - ONLY the worker remains hanging, the UI stays alive,
+-- and the results arrive via the HiveReader.READ_COMPLETE event (when they arrive).
 
 HiveReader.READ_COMPLETE = "hive_read_complete"
 local READ_REQUEST = "hive_read_request"
 
--- Воркер: ждёт запрос, читает ВСЕ ульи, сообщает о завершении.
--- Запускается из tech-цикла: parallel.waitForAny(loopFn, HiveReader.worker).
--- Пока идёт отправка пчёл (LabManager.isSending) улья изменяются и чтение
--- почти гарантированно зависнет — пропускаем его, но всё равно отвечаем
--- READ_COMPLETE, чтобы циклы разблокировали dataBusy и обновились позже.
--- Весь цикл обёрнут в pcall — неожиданная ошибка не убьёт parallel.
+-- Worker: waits for a request, reads ALL hives, reports completion.
+-- Started from the tech loop: parallel.waitForAny(loopFn, HiveReader.worker).
+-- While bees are being sent (LabManager.isSending) the hives change and reading
+-- will almost certainly hang - we skip it, but still answer
+-- READ_COMPLETE so the loops unblock dataBusy and update later.
+-- The whole loop is wrapped in pcall - an unexpected error will not kill parallel.
 function HiveReader.worker()
     while true do
         local ok, err = pcall(function()
@@ -223,7 +224,7 @@ function HiveReader.worker()
     end
 end
 
--- НЕБЛОКИРУЮЩИЙ запрос чтения: просто ставит событие воркеру и сразу выходит.
+-- NON-BLOCKING read request: just queues an event to the worker and returns immediately.
 function HiveReader.requestUpdate()
     os.queueEvent(READ_REQUEST)
 end

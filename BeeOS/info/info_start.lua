@@ -1,9 +1,9 @@
 -- info/info_start.lua
 local Genetics = require("library")
 local config = require("info.HUD_info_config")
--- paintutils глобален
+-- paintutils is global
 
--- Фон грузится один раз (не каждый кадр) — источник мигания экрана.
+-- Background is loaded once (not every frame) - the source of screen flicker.
 local bgImage = nil
 local function getBg()
     if not bgImage then
@@ -12,14 +12,14 @@ local function getBg()
     return bgImage
 end
 
--- Постоянный кэш «последнего состояния» по монитору: перерисовка только
--- когда изменились страница / секунда таймера / данные (сигнатура).
--- Это даёт гарантии, что HUD (nfp-фон) всегда рисуется, а «моргание»
--- при обновлении не появляется (нет редрау без изменений).
+-- Persistent "last state" cache per monitor: redraw only
+-- when the page / timer second / data (signature) changed.
+-- This guarantees that the HUD (nfp background) is always drawn, and "blinking"
+-- does not appear on update (no redraw without changes).
 local lastState = {}
 
--- Быстрая сигнатура видимого содержимого (пчелы/апгрейды/процент) —
--- если она не изменилась, полный редрау не нужен.
+-- Fast signature of the visible content (bees/upgrades/percent) -
+-- if it has not changed, a full redraw is not needed.
 local function dataSignature(hives, page)
     local parts = {}
     local grid = config.grid
@@ -100,7 +100,7 @@ end
 local function drawHiveData(mon, hive, baseX, baseY)
     local off = config.offsets
 
-    -- Имя пчелы или EMPTY
+    -- Bee name or EMPTY
     if hive.data and hive.data.bees and #hive.data.bees > 0 then
         mon.setBackgroundColor(colors.gray)
         mon.setCursorPos(baseX + off.bee_prefix.x, baseY + off.bee_prefix.y)
@@ -138,7 +138,7 @@ local function drawHiveData(mon, hive, baseX, baseY)
         mon.write(config.placeholders.no_bee)
     end
 
-    -- Апгрейды
+    -- Upgrades
     local upgrades = (hive.data and hive.data.upgrades) or {}
     for i = 1, off.upgrade_count do
         local y = baseY + off.upgrade_list.y + (i - 1)
@@ -159,7 +159,7 @@ local function drawHiveData(mon, hive, baseX, baseY)
         end
     end
 
-    -- Прогресс-бар
+    -- Progress bar
     local percent = 0
     if hive.data and hive.data.inventoryPercent then
         percent = hive.data.inventoryPercent
@@ -177,7 +177,7 @@ local function drawHiveData(mon, hive, baseX, baseY)
         mon.write(off.bar.char)
     end
 
-    -- Проценты и %
+    -- Percent and %
     mon.setBackgroundColor(colors.gray)
     local pStr = string.format("%03d", math.floor(percent))
     mon.setCursorPos(baseX + off.bar_text.percent_x, baseY + off.bar_text.y)
@@ -196,7 +196,7 @@ local function drawHiveData(mon, hive, baseX, baseY)
         mon.write("-")
     end
 
-    -- Гены
+    -- Genes
     if hive.data and hive.data.bees then
         for beeIdx = 1, 5 do
             local y = baseY + off.gene_grid.start_y + (beeIdx - 1)
@@ -259,8 +259,8 @@ local function drawPagination(mon, page, totalPages)
     end
 end
 
--- Скрытый буфер-окно на каждый монитор. Создаётся ОДИН раз (видимость
--- false), чтобы не было вспышки пустого окна при создании на каждом кадре.
+-- Hidden buffer window per monitor. Created ONCE (visibility
+-- false), so there is no flash of an empty window when created every frame.
 local buffers = {}
 
 local function getBuffer(mon)
@@ -273,10 +273,10 @@ local function getBuffer(mon)
     return buf
 end
 
--- Отрисовка кадра на конкретном мониторе.
--- Кадр пропускается, если ничего не изменилось (нет лишних редрау и
--- «моргания»). Таймер в сигнатуру больше не входит — перерисовка только
--- по изменению страницы/данных.
+-- Draw a frame on a specific monitor.
+-- The frame is skipped if nothing changed (no unnecessary redraws and
+-- "blinking"). The timer is no longer part of the signature - redraw only
+-- on page/data change.
 local function run(mon, page, totalPages, hives)
     local sig = dataSignature(hives, page)
 
@@ -290,7 +290,7 @@ local function run(mon, page, totalPages, hives)
     buf.setBackgroundColor(colors.black)
     buf.clear()
 
-    -- Перенаправляем вывод в буфер, затем показываем готовый кадр
+    -- Redirect output to the buffer, then show the finished frame
     local oldTerm = term.current()
     term.redirect(buf)
 
@@ -303,8 +303,8 @@ local function run(mon, page, totalPages, hives)
     lastState[mon] = { page = page, total = totalPages, sig = sig }
 end
 
--- Сброс при перезапуске экранов: прячем старые буферы (объекты-мониторы
--- после peripheral.wrap могут быть новыми) и чистим кэш.
+-- Reset on screen restart: hide old buffers (monitor objects
+-- after peripheral.wrap may be new) and clear the cache.
 local function reset()
     for _, buf in pairs(buffers) do
         pcall(function() buf.setVisible(false) end)

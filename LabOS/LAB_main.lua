@@ -1,15 +1,15 @@
 -- LAB_main.lua
--- Главный исполняемый файл лабораторного терминала (LabOS).
+-- Main executable file of the laboratory terminal (LabOS).
 --
--- Инициализирует периферии через lab_config_loader (статичный
--- lab_lib.lua + динамичный labos_config.lua от HeartOS), поднимает
--- rednet, принимает конфиги по протоколу HeartOS (freeze / update_config /
--- unfreeze / status / busy?), сообщает свой статус (free/busy) и рисует
--- экран ожидания (HUD_Lab_Boot.nfp) при заморозке или ожидании конфигов.
+-- Initializes peripherals via lab_config_loader (static
+-- lab_lib.lua + dynamic labos_config.lua from HeartOS), brings up
+-- rednet, accepts configs via the HeartOS protocol (freeze / update_config /
+-- unfreeze / status / busy?), reports its status (free/busy) and draws
+-- the wait screen (HUD_Lab_Boot.nfp) while frozen or waiting for configs.
 --
--- Единый владелец событий - главный цикл (os.pullEvent без фильтра),
--- чтобы rednet-сообщения никогда не терялись; рендер выполняется в этом
--- же цикле по таймеру.
+-- Single event owner - the main loop (os.pullEvent without a filter),
+-- so rednet messages are never lost; rendering is done in this
+-- same loop on a timer.
 
 local ConfigLoader = require("lab_config_loader")
 local lib = ConfigLoader.load()
@@ -23,7 +23,7 @@ local Breeding = require("lab_breeding")
 local Boot = require("lab_boot")
 local RednetProtocol = require("rednet_protocol")
 
--- ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
+-- ==================== GLOBAL VARIABLES ====================
 local running = true
 local frame = 0
 local mode = "wait"
@@ -33,31 +33,32 @@ local geneCounts = {}
 local neededCounts = {}
 
 local targetHive = nil
+--- @type string|nil
 local targetHiveBlock = nil
 local lastSenderId = nil
 local lastExpectedCount = nil
 local processing = false
 
--- Протокол HeartOS
+-- HeartOS protocol
 local currentStatus = "free"
 local frozen = false
-local waitPrepared = false  -- перерисовка фона ожидания при смене режима
--- Страховка от потерянного unfreeze: если заморозка слишком долго без
--- активной настройки (конфиг не приходит), снимаем её автоматически.
+local waitPrepared = false  -- redraw of the wait background when the mode changes
+-- Safeguard against a lost unfreeze: if the freeze lasts too long without
+-- active configuration (no config arrives), we lift it automatically.
 local frozenSince = nil
 local FROZEN_MAX_SECONDS = 60
 local lastConfigActivity = os.clock()
--- Таймер экрана WIN (показываем ~5 с после удачного апгрейда, затем WAIT)
+-- WIN screen timer (show ~5 s after a successful upgrade, then WAIT)
 local winSince = 0
 
--- Файл состояния
+-- State file
 local STATE_FILE = "lab_state.dat"
 local cancelRequested = false
 
--- Динамический конфиг от HeartOS (сохраняется в labos_config.lua)
+-- Dynamic config from HeartOS (saved to labos_config.lua)
 local LABOS_CONFIG_FILE = "labos_config.lua"
 
--- ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С ЛОГОМ ====================
+-- ==================== LOG HELPER FUNCTIONS ====================
 local LOG_DIR = "_logs"
 local LOG_FILE = "_logs/lab_os.log"
 local function ensureLabLogDir()
@@ -66,14 +67,14 @@ local function ensureLabLogDir()
     end
 end
 
--- Пишет и в экранный буфер (HUD), и в файл (для отладки)
+-- Writes both to the screen buffer (HUD) and to a file (for debugging)
 local function addLogLine(line)
     if type(line) ~= "string" then
         line = tostring(line)
     end
     line = line:gsub("§.", "")
 
-    -- В файл (всегда, без потерь)
+    -- To the file (always, without loss)
     ensureLabLogDir()
     local f = fs.open(LOG_FILE, "a")
     if f then
@@ -81,14 +82,14 @@ local function addLogLine(line)
         f.close()
     end
 
-    -- В экранный буфер HUD
+    -- To the HUD screen buffer
     table.insert(logBuffer, line)
     if #logBuffer > 9 then
         table.remove(logBuffer, 1)
     end
 end
 
--- ==================== ЗАГРУЗКА И СОХРАНЕНИЕ СОСТОЯНИЯ ====================
+-- ==================== STATE LOADING AND SAVING ====================
 local function loadState()
     if fs.exists(STATE_FILE) then
         local file = fs.open(STATE_FILE, "r")
@@ -129,29 +130,29 @@ local function clearState()
     lastExpectedCount = nil
 end
 
--- ==================== ОБНОВЛЕНИЕ ДАННЫХ ====================
+-- ==================== DATA REFRESH ====================
 local function refreshData()
     local okBees, resBees = pcall(Utils.getBeesFromBarrel)
     if okBees then bees = resBees else bees = {} addLogLine("Error reading barrel") end
     local okCounts, resCounts = pcall(Utils.getGeneCountsFromIndexer)
     if okCounts then geneCounts = resCounts else geneCounts = {} addLogLine("Error reading indexer") end
-    -- neededCounts считается без чтения периферии, всегда безопасно
+    -- neededCounts is computed without reading peripherals, always safe
     do
         local ok, res = pcall(Utils.calculateNeededGenes, bees)
         if ok then neededCounts = res else neededCounts = {} end
     end
 end
 
--- ==================== ПРОТОКОЛ HEARTOS ====================
+-- ==================== HEARTOS PROTOCOL ====================
 
--- Сохранить динамический конфиг от HeartOS и пересобрать библиотеку
+-- Save the dynamic config from HeartOS and reassemble the library
 local function saveDynamicConfig(data)
     if type(data) ~= "table" then return false end
     local file = fs.open(LABOS_CONFIG_FILE, "w")
     if not file then return false end
     file.write("return " .. textutils.serialize(data))
     file.close()
-    -- Модули кэшируют lab_lib, поэтому перезагружаем их после пересборки
+    -- Modules cache lab_lib, so we reload them after reassembly
     package.loaded["lab_lib"] = nil
     package.loaded["lab_hud"] = nil
     package.loaded["lab_buttons"] = nil
@@ -162,11 +163,11 @@ local function saveDynamicConfig(data)
     return true
 end
 
--- Обработка одного rednet-сообщения от HeartOS.
--- Возвращает: "config_reloaded" (конфиг принят, нужно обновить UI/периферии),
---   nil (просто ответили).
+-- Handles one rednet message from HeartOS.
+-- Returns: "config_reloaded" (config accepted, UI/peripherals need updating),
+--   nil (just replied).
 local function handleConfigMessage(sender, message)
-    -- Отладочный вывод в консоль терминала (видно, что происходит)
+    -- Debug output to the terminal console (shows what is happening)
     if type(message) == "string" then
         addLogLine("Net<- '" .. tostring(message) .. "'")
         if message == "busy?" or message == "status" then
@@ -174,7 +175,7 @@ local function handleConfigMessage(sender, message)
             rednet.send(sender, currentStatus)
         elseif message == "freeze" then
             if currentStatus == "busy" then
-                -- Терминал занят задачей: не замораживаем, Edit не должен открыться
+                -- Terminal is busy with a task: do not freeze, Edit must not open
                 rednet.send(sender, "wait")
             else
                 frozen = true
@@ -223,15 +224,15 @@ local function handleConfigMessage(sender, message)
     return nil
 end
 
--- ==================== ОЧЕРЕДЬ ЗАДАЧ (объявлена до onBeeOut и др.) ====================
--- Долгие задачи (Возврат пчёл / апгрейд / производство / размножение)
--- выполняются в отдельном потоке taskWorker, чтобы не блокировать главный
--- цикл (рендер + события). runTask кладёт задачу в очередь.
+-- ==================== TASK QUEUE (declared before onBeeOut etc.) ====================
+-- Long tasks (Bee return / upgrade / production / breeding)
+-- run in a separate taskWorker thread so as not to block the main
+-- loop (render + events). runTask puts a task into the queue.
 local taskQueue = {}
-local runTask = nil   -- заполняется ниже, но виден всем
+local runTask = nil   -- assigned below, but visible to everyone
 local taskWorker = nil
 
--- ==================== ОБРАБОТЧИКИ КНОПОК ====================
+-- ==================== BUTTON HANDLERS ====================
 local function setBusy(busy)
     processing = busy
     if busy then
@@ -259,17 +260,22 @@ local function onBeeOut()
         addLogLine("!ERROR: No sender ID.")
         return
     end
-    -- Возврат пчёл выполняется в taskWorker (не блокирует rednet)
+    -- Capture the guarded value: the closure below may run after targetHiveBlock
+    -- is cleared, so keep a local copy that LuaLS knows is a non-nil string.
+    local hiveBlockName = targetHiveBlock
+    -- Bee return runs in taskWorker (does not block rednet)
     setBusy(true)
     runTask(function()
         addLogLine("Returning bees...")
-        local hive = peripheral.wrap(targetHiveBlock)
+        --- @type table
+        local hive = peripheral.wrap(hiveBlockName)
         if not hive then
-            addLogLine("!ERROR: Hive not found: " .. targetHiveBlock)
+            addLogLine("!ERROR: Hive not found: " .. hiveBlockName)
             return
         end
 
-        -- Возвращаем пчёл из бочки в улей
+        -- Return bees from the barrel to the hive
+        --- @type table
         local barrel = peripheral.wrap(lib.peripherals.lab_chest)
         if not barrel then
             addLogLine("!ERROR: Lab chest not found: " .. tostring(lib.peripherals.lab_chest))
@@ -280,13 +286,13 @@ local function onBeeOut()
             return Utils.isCageItem(item)
         end
 
-        -- Проверка: клетка ПУСТАЯ (внутри нет пчелы).
-        -- Улей выбрасывает пустую клетку после обработки возвращённой пчелы
-        -- обычно как sturdy_bee_cage без данных пчелы (иногда bee_cage).
+        -- Check: the cage is EMPTY (no bee inside).
+        -- The hive ejects an empty cage after processing a returned bee,
+        -- usually as sturdy_bee_cage without bee data (sometimes bee_cage).
         local function isCageEmpty(item)
             if not isBeeCage(item) then return false end
             if item.name == "productivebees:bee_cage" then return true end
-            -- sturdy_bee_cage: заполнена, если в custom_data есть пчела
+            -- sturdy_bee_cage: filled if there is a bee in custom_data
             local comp = item.components
             if not comp then return true end
             local cd = comp["minecraft:custom_data"]
@@ -294,7 +300,7 @@ local function onBeeOut()
             return not cd.bee_type and not cd.type
         end
 
-        -- Диагностика: содержимое бочки ДО возврата
+        -- Diagnostics: barrel contents BEFORE return
         addLogLine("Barrel before return:")
         for slot = 1, barrel.size() do
             local item = barrel.getItemDetail(slot)
@@ -303,8 +309,8 @@ local function onBeeOut()
             end
         end
 
-        -- Возврат: улей принимает клетки в слот 12 (входной слот), по одной.
-        -- Стек не переносим целиком - улей обрабатывает клетки по одной.
+        -- Return: the hive accepts cages into slot 12 (input slot), one at a time.
+        -- We do not move the whole stack - the hive processes cages one by one.
         local moved = 0
         for slot = 1, barrel.size() do
             local item = barrel.getItemDetail(slot)
@@ -316,11 +322,12 @@ local function onBeeOut()
                     local slot12Item = hive.getItemDetail(12)
                     if slot12Item then
                         if slot12Item.name == "productivebees:bee_cage" then
-                            -- В слот 12 попала пустая клетка - убираем её в хранилище,
-                            -- чтобы освободить входной слот улья. (sturdy_bee_cage
-                            -- в слоте 12 не трогаем: это заполненная клетка, которую
-                            -- улей ещё обрабатывает.)
+                            -- An empty cage got into slot 12 - move it to storage
+                            -- to free the hive input slot. (We do not touch
+                            -- sturdy_bee_cage in slot 12: it is a filled cage that
+                            -- the hive is still processing.)
                             local resourceChestName12 = lib.peripherals.resource_chest
+                            --- @type table
                             local c12 = peripheral.wrap(resourceChestName12)
                             if c12 then
                                 local cleared = hive.pushItems(resourceChestName12, 12)
@@ -333,14 +340,14 @@ local function onBeeOut()
                         end
                         if hive.getItemDetail(12) then sleep(1) end
                     else
-                        local m = barrel.pushItems(targetHiveBlock, slot, 1, 12)
+                        local m = barrel.pushItems(hiveBlockName, slot, 1, 12)
                         if m > 0 then
                             moved = moved + m
                             remaining = remaining - m
                             addLogLine(string.format("Returned %d bees to hive.", moved))
                             sleep(0.5)
                         else
-                            addLogLine("!WARN: slot " .. slot .. " bee not moved to " .. targetHiveBlock)
+                            addLogLine("!WARN: slot " .. slot .. " bee not moved to " .. hiveBlockName)
                             break
                         end
                     end
@@ -351,7 +358,7 @@ local function onBeeOut()
             end
         end
 
-        -- Диагностика: содержимое бочки ПОСЛЕ возврата
+        -- Diagnostics: barrel contents AFTER return
         local leftInBarrel = 0
         addLogLine("Barrel after return:")
         for slot = 1, barrel.size() do
@@ -363,10 +370,11 @@ local function onBeeOut()
         end
         addLogLine(string.format("Bees returned: %d, expected: %s, left in barrel: %d", moved, tostring(lastExpectedCount), leftInBarrel))
 
-        -- Забираем пустые клетки из улья в хранилище.
-        -- Улей после возврата пчелы выбрасывает пустую клетку
-        -- (может быть как bee_cage, так и sturdy_bee_cage без данных пчелы).
-        -- Собираем с повторами: выбрасывание происходит не мгновенно.
+        -- Take empty cages from the hive to storage.
+        -- After returning a bee, the hive ejects an empty cage
+        -- (can be either bee_cage or sturdy_bee_cage without bee data).
+        -- We collect with retries: the ejection does not happen instantly.
+        --- @type table
         local resourceChest = peripheral.wrap(lib.peripherals.resource_chest)
         local collectedEmpty = 0
         if not resourceChest then
@@ -387,7 +395,7 @@ local function onBeeOut()
                         end
                     end
                 end
-                -- Слот 12 тоже освобождаем от пустой клетки
+                -- Also free slot 12 from an empty cage
                 local s12 = hive.getItemDetail(12)
                 if s12 and isCageEmpty(s12) then
                     found = true
@@ -403,7 +411,7 @@ local function onBeeOut()
             addLogLine(string.format("Empty cages collected from hive: %d", collectedEmpty))
         end
 
-        -- Уведомляем BeeOS о возврате (снимает lock). Уходим в WAIT всегда.
+        -- Notify BeeOS about the return (clears the lock). We always go to WAIT.
         if moved > 0 then
             rednet.send(lastSenderId, { type = "lab_complete", hive_id = targetHive, bee_count = moved })
             addLogLine(string.format("Sent lab_complete to %s (hive %s, %d bees)", tostring(lastSenderId), tostring(targetHive), moved))
@@ -417,17 +425,17 @@ local function onBeeOut()
     end)
 end
 
--- ==================== ЗАДАЧИ (ВЫПОЛНЯЮТСЯ В ОТДЕЛЬНОМ ПОТОКЕ) ====================
--- ВАЖНО: долгие задачи (производство генов / апгрейд / размножение) НЕ должны
--- блокировать главный цикл, иначе sleep() внутри них съест rednet-сообщения
--- (busy?/freeze) из-за фильтра, и HeartOS не получит ответ. Поэтому задачи
--- кладутся в очередь и выполняются потоком taskWorker.
+-- ==================== TASKS (EXECUTED IN A SEPARATE THREAD) ====================
+-- IMPORTANT: long tasks (gene production / upgrade / breeding) must NOT
+-- block the main loop, otherwise sleep() inside them will swallow rednet messages
+-- (busy?/freeze) due to the filter, and HeartOS will not get a reply. That is why tasks
+-- are queued and executed by the taskWorker thread.
 runTask = function(taskFn)
     table.insert(taskQueue, taskFn)
 end
 
--- Выполняет задачи из очереди (с гарантированным сбросом busy).
--- Работает, пока есть задачи; иначе крутится на pullEvent (не блокируя rednet).
+-- Executes tasks from the queue (with guaranteed busy reset).
+-- Runs while there are tasks; otherwise spins on pullEvent (without blocking rednet).
 taskWorker = function()
     while running do
         if #taskQueue > 0 then
@@ -544,7 +552,7 @@ local function onBeeProduce()
         addLogLine("Start gene prod.")
         mode = "log"
         GeneProduction.runProduction(function(msg) addLogLine("" .. msg) end)
-        mode = "wait"   -- после завершения возвращаемся в главное меню WAIT
+        mode = "wait"   -- after completion return to the WAIT main menu
     end)
 end
 
@@ -567,8 +575,8 @@ local function onBreed()
     end)
 end
 
--- Устанавливаем колбэки кнопок (переустанавливаются после перезагрузки
--- модулей при приёме нового конфига)
+-- Set the button callbacks (re-set after module reload
+-- when a new config is received)
 local function setupButtonCallbacks()
     Buttons.setCallbacks({
         onBeeOut = onBeeOut,
@@ -578,7 +586,7 @@ local function setupButtonCallbacks()
     })
 end
 
--- ==================== ОТКРЫТИЕ REDNET ====================
+-- ==================== OPENING REDNET ====================
 local function openRednet()
     local ok, err = RednetProtocol.host("labos", "main")
     if not ok then
@@ -589,14 +597,14 @@ local function openRednet()
     return true
 end
 
--- ==================== ЭКРАН ОЖИДАНИЯ ====================
--- Ожидание при заморозке рисуется в таймерной ветке главного цикла через
--- Boot.drawWaitFrame (плавная полоса); выйти из ожидания можно только
--- командой unfreeze (или приёмом конфига, что пересобирает экраны).
+-- ==================== WAIT SCREEN ====================
+-- The freeze wait is drawn in the timer branch of the main loop via
+-- Boot.drawWaitFrame (smooth bar); you can only leave the wait with the
+-- unfreeze command (or by receiving a config, which reassembles the screens).
 
--- ==================== ОБНОВЛЕНИЕ ПЕРИФЕРИЙ ПОСЛЕ КОНФИГА ====================
--- После приёма конфига все модули перезагружены; главная программа должна
--- получить свежий конфиг и свежие обёртки периферии.
+-- ==================== PERIPHERAL REFRESH AFTER CONFIG ====================
+-- After receiving a config all modules are reloaded; the main program must
+-- get the fresh config and fresh peripheral wrappers.
 local function reinitAfterConfig()
     lib = require("lab_config_loader").reload()
     Utils = require("lab_utils")
@@ -605,13 +613,13 @@ local function reinitAfterConfig()
     Processor = require("lab_processor")
     GeneProduction = require("lab_geneproduction")
     Breeding = require("lab_breeding")
-    setupButtonCallbacks()   -- новый Buttons модуль имеет пустые callbacks
+    setupButtonCallbacks()   -- the new Buttons module has empty callbacks
     refreshData()
 end
 
--- ==================== ГЛАВНЫЙ ЦИКЛ ====================
+-- ==================== MAIN LOOP ====================
 
--- Проверка: настроена ли периферия (пришёл labos_config.lua от HeartOS)
+-- Check: are the peripherals configured (labos_config.lua arrived from HeartOS)
 local function hasPeripheralConfig()
     local ok, res = pcall(ConfigLoader.load)
     if ok and res and res.peripherals and res.peripherals.main_monitor then
@@ -620,8 +628,8 @@ local function hasPeripheralConfig()
     return false
 end
 
--- Печатает в терминал компьютера текущее состояние конфига периферии.
--- Мониторы не используются (как в BeeOS).
+-- Prints the current peripheral config state to the computer terminal.
+-- Monitors are not used (as in BeeOS).
 local function printConfigStatus()
     local native = term.native()
     local old = term.current()
@@ -648,11 +656,11 @@ local function printConfigStatus()
     term.redirect(old)
 end
 
--- Однократное ожидание сообщения от HeartOS.
--- Возвращает true, когда пришёл и обработан конфиг (config_reloaded).
+-- Single wait for a message from HeartOS.
+-- Returns true when a config has arrived and been processed (config_reloaded).
 local function waitForConfigMessage()
     while true do
-        -- pcall возвращает (ok, eventName, p1, p2, ...); для rednet_message:
+        -- pcall returns (ok, eventName, p1, p2, ...); for rednet_message:
         -- p1 = senderId, p2 = message
         local okPull, evt, senderId, msg = pcall(os.pullEvent, "rednet_message")
         if okPull and evt == "rednet_message" then
@@ -667,8 +675,8 @@ end
 print("Starting laboratory terminal...")
 openRednet()
 
--- Гейт ожидания конфига (как BeeOS): пока периферия не настроена -
--- мигаем статусом в консоли; мониторы не занимаем.
+-- Config wait gate (as in BeeOS): while the peripherals are not configured -
+-- blink the status in the console; do not take over the monitors.
 local waiting = false
 while not hasPeripheralConfig() do
     if not waiting then
@@ -685,37 +693,37 @@ while not hasPeripheralConfig() do
     end
 end
 
--- Конфиг получен. Важно: HeartOS при отправке шлёт freeze -> update_config ->
--- unfreeze. freeze приходит в гейте (frozen=true), а unfreeze может прийти
--- в окно между выходом из гейта и стартом потоков и потеряться. Поэтому
--- после успешного получения конфига гарантированно начинаем работу:
--- сбрасываем frozen (unfreeze, если придёт позже, не повредит).
+-- Config received. Important: when sending, HeartOS does freeze -> update_config ->
+-- unfreeze. freeze arrives in the gate (frozen=true), while unfreeze may arrive
+-- in the window between leaving the gate and starting the threads and get lost. Therefore
+-- after successfully receiving a config we start work unconditionally:
+-- reset frozen (an unfreeze arriving later will not hurt).
 frozen = false
 waitPrepared = false
 
--- Конфиг получен - показываем обновлённый статус (зелёный [ OK ])
+-- Config received - show the updated status (green [ OK ])
 printConfigStatus()
 
 refreshData()
-loadState()   -- восстановить состояние после перезапуска
--- Если в бочке нет пчёл, сбросить состояние
+loadState()   -- restore state after restart
+-- If there are no bees in the barrel, reset the state
 if #bees == 0 then
     clearState()
 end
 
 setupButtonCallbacks()
 
--- ==================== ОБРАБОТКА REDNET (общая для обоих потоков) ====================
--- Вызывается из renderLoop И eventLoop, т.к. rednet-сообщение может уйти
--- в любой поток. Обработка неблокирующая (флаги, конфиг, lab_request),
--- поэтому безопасна в renderLoop. Событие достаётся ровно одному потоку,
--- значит обработается один раз (нет потери unfreeze/freeze/конфига).
+-- ==================== REDNET HANDLING (shared by both threads) ====================
+-- Called from renderLoop AND eventLoop, because a rednet message may go
+-- to either thread. Handling is non-blocking (flags, config, lab_request),
+-- so it is safe in renderLoop. The event goes to exactly one thread,
+-- so it is processed once (no loss of unfreeze/freeze/config).
 local function handleRednet(senderId, message)
     if message and message.type == "lab_request" then
         targetHive = message.hive_id
         targetHiveBlock = message.hive_block
         lastExpectedCount = message.bee_count
-        -- BeeOS передаёт свой реальный id в sender_id (broadcast может дать 0)
+        -- BeeOS passes its real id in sender_id (broadcast may give 0)
         lastSenderId = message.sender_id or senderId
         saveState()
         addLogLine(string.format("Received bees from hive %d (sender %s, expected %s).", targetHive, tostring(lastSenderId), tostring(lastExpectedCount)))
@@ -723,15 +731,16 @@ local function handleRednet(senderId, message)
     else
         local action = handleConfigMessage(senderId, message)
         if action == "config_reloaded" then
-            -- Конфиг принят от HeartOS - настройка закончена. Снимаем
-            -- заморозку самостоятельно (unfreeze мог потеряться в гонке
-            -- с отрисовкой/загрузкой), иначе экран ожидания останется
-            -- висеть навсегда.
+            -- Config accepted from HeartOS - configuration is done. We lift the
+            -- freeze ourselves (unfreeze could be lost in a race
+            -- with rendering/loading), otherwise the wait screen would remain
+            -- hanging forever.
             frozen = false
             waitPrepared = false
             pcall(function()
                 reinitAfterConfig()
-                -- показываем короткую загрузку после обновления
+                -- show a short loading after the update
+                --- @type table
                 local mainMon = peripheral.wrap(lib.peripherals.main_monitor)
                 if mainMon then
                     Boot.prepareScreen(mainMon)
@@ -742,12 +751,12 @@ local function handleRednet(senderId, message)
     end
 end
 
--- ==================== ГЛАВНЫЙ ЦИКЛ (единый владелец всех событий) ====================
--- Один поток обрабатывает ВСЁ: таймер (рендер), monitor_touch (кнопки),
--- rednet_message (протокол HeartOS). Благодаря этому клики по кнопкам и
--- сообщения протокола НИКОГДА не теряются (нет конкуренции потоков за
--- события). Долгие задачи выполняются отдельным потоком taskWorker и не
--- блокируют этот цикл.
+-- ==================== MAIN LOOP (single event owner) ====================
+-- A single thread processes EVERYTHING: timer (render), monitor_touch (buttons),
+-- rednet_message (HeartOS protocol). Thanks to this, button clicks and
+-- protocol messages are NEVER lost (no thread competition for
+-- events). Long tasks run in a separate taskWorker thread and do not
+-- block this loop.
 local function mainLoop()
     local timer = os.startTimer(0.1)
     while running do
@@ -757,8 +766,8 @@ local function mainLoop()
             local ok, err = pcall(function()
                 frame = frame + 1
 
-                -- Страховка: если заморозка висит дольше FROZEN_MAX_SECONDS
-                -- и конфигов давно не было - снимаем (потерянный unfreeze).
+                -- Safeguard: if the freeze lasts longer than FROZEN_MAX_SECONDS
+                -- and there has been no config for a long time - lift it (lost unfreeze).
                 if frozen and frozenSince and
                    (os.clock() - frozenSince > FROZEN_MAX_SECONDS) and
                    (os.clock() - lastConfigActivity > FROZEN_MAX_SECONDS) then
@@ -769,7 +778,8 @@ local function mainLoop()
                 end
 
                 if frozen then
-                    -- Заморозка: плавный экран ожидания (HUD_Lab_Boot.nfp + полоса)
+                    -- Freeze: smooth wait screen (HUD_Lab_Boot.nfp + bar)
+                    --- @type table
                     local mainMon = peripheral.wrap(lib.peripherals.main_monitor)
                     if mainMon then
                         if not waitPrepared then
@@ -782,7 +792,7 @@ local function mainLoop()
                     if waitPrepared then
                         waitPrepared = false
                     end
-                    -- Экран WIN показываем ~5 с, затем возврат в WAIT
+                    -- Show the WIN screen ~5 s, then return to WAIT
                     if mode == "win" and winSince > 0 and os.clock() - winSince > 5 then
                         mode = "wait"
                         winSince = 0
@@ -805,7 +815,7 @@ local function mainLoop()
         elseif event == "monitor_touch" then
             if not frozen then
                 local ok, err = pcall(function()
-                    -- Диагностика: какой монитор получил клик
+                    -- Diagnostics: which monitor received the click
                     addLogLine("Touch: " .. tostring(p1))
                     Buttons.handleTouch(p1, p2, p3)
                 end)

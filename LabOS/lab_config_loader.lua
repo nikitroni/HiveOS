@@ -1,25 +1,25 @@
 -- lab_config_loader.lua
--- Адаптер периферии LabOS.
+-- LabOS peripheral adapter.
 --
--- LabOS использует статичную библиотеку lab_lib.lua (координаты HUD, гены,
--- настройки — без периферии) и динамичный конфиг labos_config.lua от HeartOS
--- (только имена периферии, плоские ключи).
+-- LabOS uses the static library lab_lib.lua (HUD coordinates, genes,
+-- settings - without peripherals) and the dynamic config labos_config.lua from HeartOS
+-- (peripheral names only, flat keys).
 --
--- Задачи адаптера:
---   1. Загрузить lab_lib.lua (статичная база).
---   2. Загрузить labos_config.lua (периферия от HeartOS).
---   3. Смапить плоские ключи HeartOS на структуру, которую ожидают модули
+-- Adapter tasks:
+--   1. Load lab_lib.lua (static base).
+--   2. Load labos_config.lua (peripherals from HeartOS).
+--   3. Map HeartOS flat keys onto the structure expected by the modules
 --      lab_*.lua (gene_indexer -> bee_indexer, crafter_1..4 -> crafters[1..4],
---      refresh -> button_monitors.breed, relay_incubator -> relay и т.д.).
---   4. Подмешать имена периферии в lab_lib.peripherals.
+--      refresh -> button_monitors.breed, relay_incubator -> relay, etc.).
+--   4. Merge peripheral names into lab_lib.peripherals.
 --
--- Потребители (lab_utils, lab_hud и др.) читают require("lab_lib").peripherals
--- — сами их менять не нужно.
+-- Consumers (lab_utils, lab_hud, etc.) read require("lab_lib").peripherals
+-- - they don't need to change them themselves.
 
 local LAB_LIB_FILE = "lab_lib.lua"
 local LABOS_CONFIG_FILE = "labos_config.lua"
 
--- ==================== ЗАГРУЗКА ФАЙЛОВ ====================
+-- ==================== FILE LOADING ====================
 
 local function loadTableFile(path)
     if not fs.exists(path) then
@@ -38,9 +38,9 @@ local function loadTableFile(path)
     return nil
 end
 
--- ==================== МАППИНГ ДИНАМИЧЕСКОГО -> СТАТИЧЕСКОГО ====================
+-- ==================== DYNAMIC -> STATIC MAPPING ====================
 
--- Соответствие плоских ключей HeartOS -> структуре lab.peripherals.
+-- Correspondence of HeartOS flat keys -> lab.peripherals structure.
 local MAP = {
     { key = "main_monitor",      set = { "main_monitor" } },
     { key = "lab_chest",         set = { "lab_chest" } },
@@ -58,15 +58,15 @@ local MAP = {
     { key = "crafter_4",         set = { "crafters", 4 } },
     { key = "bee_out",           set = { "button_monitors", "bee_out" } },
     { key = "gene_upgrade",      set = { "button_monitors", "gene_upgrade" } },
-    -- Новый ключ gene_produce (кнопка переименована). Старый bee_produce
-    -- тоже мапится сюда для совместимости - конфиг HeartOS может содержать
-    -- либо bee_produce, либо gene_produce; оба -> button_monitors.gene_produce.
+    -- New key gene_produce (the button was renamed). The old bee_produce
+    -- is also mapped here for compatibility - the HeartOS config may contain
+    -- either bee_produce or gene_produce; both -> button_monitors.gene_produce.
     { key = "gene_produce",      set = { "button_monitors", "gene_produce" } },
-    -- Кнопка размножения: в конфиге HeartOS ключ "breed".
+    -- Breeding button: in the HeartOS config the key is "breed".
     { key = "breed",             set = { "button_monitors", "breed" } },
 }
 
--- Применяет динамическую периферию поверх статической базы.
+-- Applies the dynamic peripherals on top of the static base.
 local function mergePeripheralNames(labLib, dynamicConfig)
     local dynamicPeripherals = dynamicConfig.peripherals
     if type(dynamicPeripherals) ~= "table" then
@@ -95,7 +95,7 @@ local function mergePeripheralNames(labLib, dynamicConfig)
     end
 end
 
--- ==================== ПРОВЕРКА НАЛИЧИЯ ПЕРИФЕРИИ ====================
+-- ==================== PERIPHERAL PRESENCE CHECK ====================
 
 local function checkPeripherals(labLib)
     local p = labLib.peripherals
@@ -131,10 +131,10 @@ local function checkPeripherals(labLib)
     end
 end
 
--- ==================== СБОРКА ====================
+-- ==================== ASSEMBLY ====================
 
--- Загрузить библиотеку лабы (с пересборкой периферии).
--- Возвращает lab_lib с подмешанной периферией.
+-- Load the lab library (with peripheral reassembly).
+-- Returns lab_lib with merged peripherals.
 local function load()
     local labLib = loadTableFile(LAB_LIB_FILE)
     if not labLib then
@@ -148,13 +148,13 @@ local function load()
 
     checkPeripherals(labLib)
 
-    -- Потребители require("lab_lib") получают свежую библиотеку каждый раз,
-    -- но чтобы обновление работало без перезагрузки терминала, кэш сбрасываем.
+    -- Consumers require("lab_lib") get a fresh library each time,
+    -- but so that updates work without restarting the terminal, the cache is reset.
     package.loaded["lab_lib"] = labLib
     return labLib
 end
 
--- Пересобрать после приёма нового динамического конфига.
+-- Reassemble after receiving a new dynamic config.
 local function reload()
     package.loaded["lab_lib"] = nil
     package.loaded["lab_hud"] = nil

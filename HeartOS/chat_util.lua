@@ -9,7 +9,8 @@ local ChatUtil = {}
 local LogUtil = require("log_util")
 
 -- Reference to the wrapped chat_box
-local chatBox = nil
+--- @type table
+local chatBox
 -- Name of the chat_box peripheral
 local chatBoxName = nil
 -- Player name under which chat_box sends messages (for echo filtering)
@@ -243,7 +244,7 @@ end
 ---   UTF-8 "§" (\194\167) as produced by the MOTD table
 ---   and single-byte 0xA7 (legacy "\167" form).
 --- @param s string
---- @return string
+--- @return string|nil
 local function stripMOTD(s)
     if not s then return s end
     s = s:gsub("\194\167.", "")

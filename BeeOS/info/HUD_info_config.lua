@@ -11,18 +11,18 @@ return {
     },
     offsets = {
         hive_text   = { x = 0, y = 0 },        -- "---HIVE#01---"
-        bee_prefix  = { x = 0, y = 1 },        -- "-" перед именем пчелы
-        upgrade_symbol = { x = 0, y = 2 },     -- ">" перед апгрейдами
+        bee_prefix  = { x = 0, y = 1 },        -- "-" before the bee name
+        upgrade_symbol = { x = 0, y = 2 },     -- ">" before upgrades
         elite       = { x = 16, y = 0 },        -- "►ELITE◄"
-        separator   = { x = 15, start_y = 0, end_y = 6 }, -- вертикальная черта слева
+        separator   = { x = 15, start_y = 0, end_y = 6 }, -- vertical bar on the left
         gene_headers= { x = 18, y = 1 },        -- "↕︎☼Θ§"
-        bee_numbers = { x = 17, y = 2 },         -- цифры 1..5
+        bee_numbers = { x = 17, y = 2 },         -- digits 1..5
 
         upgrade_count = 4,
 
-        id          = { x = 6, y = 0 },         -- номер после "HIVE#"
-        bee_name    = { x = 1, y = 1 },         -- имя пчелы
-        upgrade_list= { x = 1, y = 2 },          -- текст апгрейда
+        id          = { x = 6, y = 0 },         -- number after "HIVE#"
+        bee_name    = { x = 1, y = 1 },         -- bee name
+        upgrade_list= { x = 1, y = 2 },          -- upgrade text
 
         bar = {
             x = 0, y = 6,
@@ -43,8 +43,8 @@ return {
         },
     },
     placeholders = {
-        no_bee = "  -E M P T Y-  ",   -- 14 символов
-        no_upgrade = "--------------", -- 14 дефисов
+        no_bee = "  -E M P T Y-  ",   -- 14 characters
+        no_upgrade = "--------------", -- 14 dashes
         no_gene = "-",
         colors = {
             empty = colors.red,

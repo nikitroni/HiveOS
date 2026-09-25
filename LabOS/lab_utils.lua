@@ -1,12 +1,12 @@
 -- lab_utils.lua
--- Вспомогательные функции для лабораторного терминала.
--- Чтение данных из бочки и индексера, анализ генов пчёл.
+-- Helper functions for the laboratory terminal.
+-- Reading data from the barrel and indexer, analyzing bee genes.
 
 local lib = require("lab_lib")
 
 local Utils = {}
 
--- ==================== КОНСТАНТЫ ====================
+-- ==================== CONSTANTS ====================
 local ELITE_VALUES = {
     productivity = "productivity.very_high",
     endurance = "endurance.strong",
@@ -16,8 +16,9 @@ local ELITE_VALUES = {
 
 local GENE_ATTRIBUTES = { "productivity", "endurance", "behavior", "weather_tolerance" }
 
--- ==================== ЧТЕНИЕ ПЧЁЛ ИЗ БОЧКИ ====================
+-- ==================== READING BEES FROM THE BARREL ====================
 function Utils.getBeesFromBarrel()
+    --- @type table
     local reader = peripheral.wrap(lib.peripherals.reader_bee)
     if not reader then error("Reader for barrel not found") end
 
@@ -35,7 +36,7 @@ function Utils.getBeesFromBarrel()
                     if attachments then
                         local attrHandler = attachments["productivebees:attributes_handler"]
                         if attrHandler then
-                            for i = 1, item.count do   -- каждая клетка в стаке
+                            for i = 1, item.count do   -- each cage in the stack
                                 table.insert(bees, {
                                     slot = item.Slot + 1,
                                     type = custom.type,
@@ -54,8 +55,9 @@ function Utils.getBeesFromBarrel()
     return bees
 end
 
--- ==================== ЧТЕНИЕ ГЕНОВ ИЗ ИНДЕКСЕРА ====================
+-- ==================== READING GENES FROM THE INDEXER ====================
 function Utils.getGeneCountsFromIndexer()
+    --- @type table
     local reader = peripheral.wrap(lib.peripherals.reader_indexer)
     if not reader then error("Reader for indexer not found") end
 
@@ -77,7 +79,7 @@ function Utils.getGeneCountsFromIndexer()
     return counts
 end
 
--- ==================== ПРОВЕРКА ЭЛИТНОСТИ ПЧЕЛЫ ====================
+-- ==================== BEE ELITENESS CHECK ====================
 function Utils.isElite(bee)
     return bee.productivity == ELITE_VALUES.productivity
         and bee.endurance == ELITE_VALUES.endurance
@@ -85,7 +87,7 @@ function Utils.isElite(bee)
         and bee.weather_tolerance == ELITE_VALUES.weather_tolerance
 end
 
--- ==================== ПОДСЧЁТ НЕДОСТАЮЩИХ ГЕНОВ ====================
+-- ==================== COUNTING MISSING GENES ====================
 function Utils.calculateNeededGenes(bees)
     local needed = { productivity = 0, endurance = 0, behavior = 0, weather_tolerance = 0 }
     for _, bee in ipairs(bees) do
@@ -107,7 +109,7 @@ function Utils.calculateNeededGenes(bees)
     return needed
 end
 
--- ==================== ФОРМАТИРОВАНИЕ ЧИСЛА ====================
+-- ==================== NUMBER FORMATTING ====================
 function Utils.formatGeneCount(count, digits)
     digits = digits or 2
     local fmt = "%0" .. digits .. "d"
@@ -119,6 +121,7 @@ end
 -- Send a chat line with the LabOS prefix (red for errors, green otherwise).
 local SECTION_SIGN = "\194\167"
 function Utils.sendChat(msg, isError)
+    --- @type table
     local chat = peripheral.wrap(lib.chat_box)
     if not chat then
         print("[LabOS] " .. msg)
@@ -132,6 +135,7 @@ end
 
 -- Find the first slot holding the given item and the total count in the chest.
 function Utils.findItem(itemName)
+    --- @type table
     local chest = peripheral.wrap(lib.peripherals.resource_chest)
     if not chest then return nil, 0 end
     local okSize, size = pcall(function() return chest.size() end)

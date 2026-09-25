@@ -1,19 +1,19 @@
 -- lab_animations.lua
--- Функции для анимаций на лабораторном мониторе.
--- Каждая функция рисует только в заданной области, не очищая остальной экран.
+-- Functions for animations on the laboratory monitor.
+-- Each function draws only in the given area without clearing the rest of the screen.
 
 local Anim = {}
 
--- ==================== ВСПОМОГАТЕЛЬНЫЕ ====================
--- Проверка, что monitor существует
+-- ==================== HELPERS ====================
+-- Check that the monitor exists
 local function checkMonitor(mon)
     if not mon then
         error("Monitor is nil")
     end
 end
 
--- ==================== АНИМАЦИЯ WIN ====================
--- Матрица букв WIN (как в предоставленном коде)
+-- ==================== WIN ANIMATION ====================
+-- Matrix of the letters WIN (as in the provided code)
 local winLogo = {
     "                    ",
     "  w   w wwwww  w   w",
@@ -28,8 +28,8 @@ local winColors = {
     colors.red, colors.orange, colors.yellow, colors.green,
     colors.lightBlue, colors.blue, colors.purple, colors.magenta
 }
--- Рисует логотип WIN в позиции (startX, startY) с переливающимися цветами.
--- frame увеличивается каждый кадр.
+-- Draws the WIN logo at (startX, startY) with shimmering colors.
+-- frame increases every frame.
 function Anim.drawWin(monitor, startX, startY, frame)
     checkMonitor(monitor)
     for row = 1, #winLogo do
@@ -40,13 +40,13 @@ function Anim.drawWin(monitor, startX, startY, frame)
                 local colorIdx = (col + frame) % #winColors + 1
                 monitor.setCursorPos(startX + col - 1, startY + row - 1)
                 monitor.setTextColor(winColors[colorIdx])
-                monitor.write("w")  -- символ "w" как в оригинале
+                monitor.write("w")  -- character "w" as in the original
             end
         end
     end
 end
 
--- ==================== АНИМАЦИЯ WAIT ====================
+-- ==================== WAIT ANIMATION ====================
 local waitLogo = {
     "                       ",
     " x   x  xx  xxxxx xxxxx",
@@ -57,8 +57,8 @@ local waitLogo = {
     " x   x x  x xxxxx   x  "
 }
 local waitFade = {colors.white, colors.lightGray, colors.gray, colors.black}
--- Рисует логотип WAIT с эффектом затухания.
--- frame определяет яркость: чем больше frame, тем темнее (циклически).
+-- Draws the WAIT logo with a fade effect.
+-- frame determines brightness: the larger frame, the darker (cyclically).
 function Anim.drawWait(monitor, startX, startY, frame)
     checkMonitor(monitor)
     local colorIdx = (math.floor(frame / 4)) % #waitFade + 1
@@ -78,18 +78,18 @@ function Anim.drawWait(monitor, startX, startY, frame)
     end
 end
 
--- ==================== АНИМАЦИЯ ДНК ====================
+-- ==================== DNA ANIMATION ====================
 local dnaPattern = {
     {cL="x",  cR=" ",  conn=" ", isX=true},
     {cL="/",  cR="\\", conn=" ", isX=false},
     {cL="|",  cR="|",  conn="-", isX=false},
     {cL="\\", cR="/",  conn=" ", isX=false},
 }
--- Рисует одну цепочку ДНК.
--- startX, startY – координаты левого верхнего угла области (она занимает 3 символа в ширину и height строк).
--- height – высота цепочки (количество строк). В вашем случае 10.
--- frame – номер кадра для анимации (определяет сдвиг).
--- inverted – если true, меняет цвета красный/синий местами.
+-- Draws one DNA strand.
+-- startX, startY - coordinates of the top-left corner of the area (it occupies 3 characters wide and height rows).
+-- height - height of the strand (number of rows). In your case 10.
+-- frame - frame number for the animation (determines the shift).
+-- inverted - if true, swaps the red/blue colors.
 function Anim.drawDNA(monitor, startX, startY, height, frame, inverted)
     checkMonitor(monitor)
     monitor.setBackgroundColor(colors.black)
@@ -109,7 +109,7 @@ function Anim.drawDNA(monitor, startX, startY, height, frame, inverted)
         if line.isX then
             monitor.setCursorPos(startX + 1, y)
             monitor.setTextColor(colors.white)
-            monitor.write("X")   -- заменили "x" на "X" для контраста
+            monitor.write("X")   -- replaced "x" with "X" for contrast
         else
             monitor.setCursorPos(startX, y)
             monitor.setTextColor(colL)

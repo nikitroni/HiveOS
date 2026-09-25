@@ -1,18 +1,19 @@
 -- lab_buttons.lua
--- Модуль для управления 4 мониторами-кнопками.
--- Каждая кнопка имеет свой монитор, анимируется независимо и обрабатывает нажатия.
--- Мониторы резолвятся ЛЕНИВО (когда периферия уже настроена конфигом от HeartOS).
+-- Module for controlling 4 button monitors.
+-- Each button has its own monitor, animates independently and handles presses.
+-- Monitors are resolved LAZILY (when the peripherals are already configured by the HeartOS config).
 
 local lib = require("lab_lib")
 local Buttons = {}
 
--- Инициализируется при первом использовании (после прихода конфига)
+-- Initialized on first use (after the config arrives)
 local monitors = nil
 local function getMonitors()
     if not monitors then
         monitors = {}
 
-        -- Безопасный wrap: если имя в конфиге отсутствует (nil), пропускаем.
+        -- Safe wrap: if the name is missing in the config (nil), skip it.
+        --- @return table|nil
         local function wname(name)
             if type(name) ~= "string" or name == "" then
                 return nil
@@ -33,7 +34,7 @@ local function getMonitors()
     return monitors
 end
 
--- Постоянные буферы кнопок (одни на модуль, не пересоздаются на кадр)
+-- Persistent button buffers (one per module, not recreated every frame)
 local buffers = {}
 
 local function rect(mon, x, y, w, h, color)
@@ -44,7 +45,7 @@ local function rect(mon, x, y, w, h, color)
     end
 end
 
--- Кнопка BEE HIVE OUT
+-- BEE HIVE OUT button
 local function drawBeeOutButton(mon, frame)
     local layers = {
         {y=3, x1=7, x2=10}, {y=3, x1=6, x2=11}, {y=4, x1=5, x2=12},
@@ -79,7 +80,7 @@ local function drawBeeOutButton(mon, frame)
     mon.write("RETURN")
 end
 
--- Кнопка GENE UPGRADE
+-- GENE UPGRADE button
 local lastCode = ""
 local function drawGeneUpgradeButton(mon, frame)
     mon.setBackgroundColor(colors.black)
@@ -97,15 +98,15 @@ local function drawGeneUpgradeButton(mon, frame)
         local x2 = 8 + math.sin(t + math.pi) * 5
         local startX = math.ceil(math.min(x1, x2))
         local endX = math.floor(math.max(x1, x2))
-        -- В функции drawGeneUpgradeButton:
+        -- In the drawGeneUpgradeButton function:
         if endX - startX > 1 then
             mon.setCursorPos(startX + 1, y)
             mon.setTextColor(colors.gray)
-            mon.write(string.rep(string.char(140), endX - startX - 1))  -- символ \140
+            mon.write(string.rep(string.char(140), endX - startX - 1))  -- character \140
         end
         mon.setCursorPos(math.floor(x1 + 0.5), y)
         mon.setTextColor(math.sin(t) > 0 and colors.cyan or colors.blue)
-        mon.write(string.char(159))  -- символ \159
+        mon.write(string.char(159))  -- character \159
         mon.setCursorPos(math.floor(x2 + 0.5), y)
         mon.setTextColor(math.sin(t + math.pi) > 0 and colors.magenta or colors.purple)
         mon.write(string.char(159))
@@ -121,12 +122,12 @@ local function drawGeneUpgradeButton(mon, frame)
     mon.write("SEQ:" .. lastCode)
 end
 
--- Кнопка GENE PRODUCTION (две анимированные пробирки, несинхронные цвета)
+-- GENE PRODUCTION button (two animated test tubes, non-synchronized colors)
 local function drawGeneProduceButton(mon, frame)
     mon.setBackgroundColor(colors.black)
     mon.clear()
 
-    -- Локальная WriteAt (пишет в монитор/буфер)
+    -- Local WriteAt (writes to the monitor/buffer)
     local function writeAt(x, y, ch, fg, bg)
         mon.setCursorPos(x, y)
         mon.setTextColor(fg)
@@ -134,31 +135,31 @@ local function drawGeneProduceButton(mon, frame)
         mon.write(ch)
     end
 
-    -- Заголовок (x=1)
+    -- Header (x=1)
     mon.setTextColor(colors.white)
     mon.setCursorPos(1, 1)
     mon.write("GENE PRODUCTION")
 
-    -- ===== Геометрия пробирки (5 колонок) =====
-    -- опущены на 2 строки ниже (rimY: 2->4)
+    -- ===== Test tube geometry (5 columns) =====
+    -- moved down 2 rows (rimY: 2->4)
     local rimY = 4
     local wallY1 = 5
     local wallY2 = 9
     local bottomY = 10
 
-    -- Рисует одну пробирку с центром в cx (левая стенка) и своим уровнем.
-    -- bubble = { x = 0..2 (смещение внутрь), y = absolute } рисуется
-    -- строго внутри жидкости (bg = color жидкости, fg = white).
+    -- Draws one test tube centered at cx (left wall) with its own level.
+    -- bubble = { x = 0..2 (offset inward), y = absolute } is drawn
+    -- strictly inside the liquid (bg = liquid color, fg = white).
     local function drawTube(cx, color, liquidTopY, bubble)
         cx = cx or 0
-        -- Жидкость (снизу вверх, внутри стенок x=cx+1..cx+3)
+        -- Liquid (bottom to top, inside the walls x=cx+1..cx+3)
         for y = wallY2, liquidTopY, -1 do
             for col = cx + 1, cx + 3 do
                 writeAt(col, y, " ", color, color)
             end
         end
 
-        -- Пузырёк: x = cx+1+off (только внутри жидкости), bg = цвет жидкости
+        -- Bubble: x = cx+1+off (only inside the liquid), bg = liquid color
         if bubble then
             local bx = cx + 1 + bubble.off
             local by = bubble.y
@@ -167,20 +168,20 @@ local function drawGeneProduceButton(mon, frame)
             end
         end
 
-        -- Стенки
+        -- Walls
         for y = wallY1, wallY2 do
             writeAt(cx, y, "|", colors.gray, colors.black)
             writeAt(cx + 4, y, "|", colors.gray, colors.black)
         end
 
-        -- Горлышко
+        -- Neck
         writeAt(cx, rimY, "/", colors.gray, colors.black)
         writeAt(cx + 1, rimY, "-", colors.gray, colors.black)
         writeAt(cx + 2, rimY, "-", colors.gray, colors.black)
         writeAt(cx + 3, rimY, "-", colors.gray, colors.black)
         writeAt(cx + 4, rimY, "\\", colors.gray, colors.black)
 
-        -- Дно
+        -- Bottom
         writeAt(cx, bottomY, "\\", colors.gray, colors.black)
         writeAt(cx + 1, bottomY, "-", colors.gray, colors.black)
         writeAt(cx + 2, bottomY, "-", colors.gray, colors.black)
@@ -188,40 +189,40 @@ local function drawGeneProduceButton(mon, frame)
         writeAt(cx + 4, bottomY, "/", colors.gray, colors.black)
     end
 
-    -- ===== Две пробирки, несинхронные, ускоренная анимация =====
+    -- ===== Two test tubes, non-synchronized, accelerated animation =====
     local liquidColors = { colors.green, colors.blue, colors.red, colors.orange, colors.pink }
 
-    -- Пробирка 1
+    -- Test tube 1
     local c1 = liquidColors[math.floor(frame / 30) % #liquidColors + 1]
     local lvl1 = 2 + math.floor((math.sin(frame * 0.1) + 1) * 1.5)
     if lvl1 < 1 then lvl1 = 1 end
     if lvl1 > 4 then lvl1 = 4 end
     local top1 = wallY2 - (lvl1 - 1)
-    -- Пузырёк 1: off 0..2, поднимается
+    -- Bubble 1: off 0..2, rising
     local b1 = {
         off = (math.floor(frame / 10)) % 3,
         y = wallY2 - math.floor((frame * 0.35) % 5),
     }
 
-    -- Пробирка 2 (своя фаза)
+    -- Test tube 2 (own phase)
     local c2 = liquidColors[(math.floor((frame + 45) / 30) + 2) % #liquidColors + 1]
     local lvl2 = 2 + math.floor((math.sin((frame + 3.1) * 0.08) + 1) * 1.5)
     if lvl2 < 1 then lvl2 = 1 end
     if lvl2 > 4 then lvl2 = 4 end
     local top2 = wallY2 - (lvl2 - 1)
-    -- Пузырёк 2: своя фаза (другой темп/оффсет) - ВТОРАЯ пробирка тоже с пузырьком
+    -- Bubble 2: own phase (different tempo/offset) - the SECOND tube also has a bubble
     local b2 = {
         off = (math.floor(frame / 7) + 1) % 3,
         y = wallY2 - math.floor(((frame + 2) * 0.27) % 5),
     }
 
-    -- Центрируем: 2×(5 колонок) + отступ 3 = 13 колонок
+    -- Center: 2x(5 columns) + 3 spacing = 13 columns
     local totalW = 13
     local w, _ = mon.getSize()
     local startX = math.floor((w - totalW) / 2)
     if startX < 1 then startX = 1 end
 
-    -- Левая на 1 правее, правая ещё +9 (итого отступ 3 между ними)
+    -- Left one 1 to the right, right one +9 more (total 3 spacing between them)
     drawTube(startX + 1, c1, top1, b1)
     drawTube(startX + 9, c2, top2, b2)
 end
@@ -232,41 +233,41 @@ end
 --     mon.setTextColor(colors.white)
 --     mon.setCursorPos(5, 1)
 --     mon.write("GENE CHECK")
---     -- Плавное покачивание всей пчелы
+--     -- Smooth swaying of the whole bee
 --     local offset = math.sin(frame * 0.2) * 1
 --     local x, y = 3, 6 + offset
 
---     -- Крылья (меняют положение)
+--     -- Wings (change position)
 --     local wingShift = (math.floor(frame * 3) % 2 == 0) and 0 or 1
---     -- Левое крыло
+--     -- Left wing
 --     rect(mon, x + 2, y - 2 + wingShift, 2, 2, colors.lightGray)
---     -- Правое крыло
+--     -- Right wing
 --     rect(mon, x + 5, y - 2 + wingShift, 2, 2, colors.lightGray)
 
---     -- Тело
---     rect(mon, x, y, 2, 2, colors.yellow) -- Голова
---     rect(mon, x + 2, y, 2, 2, colors.black)  -- Полоса 1
---     rect(mon, x + 4, y, 2, 2, colors.yellow) -- Полоса 2
---     rect(mon, x + 6, y, 2, 2, colors.black)  -- Полоса 3
---     rect(mon, x + 8, y + 1, 1, 1, colors.gray) -- Жало
+--     -- Body
+--     rect(mon, x, y, 2, 2, colors.yellow) -- Head
+--     rect(mon, x + 2, y, 2, 2, colors.black)  -- Stripe 1
+--     rect(mon, x + 4, y, 2, 2, colors.yellow) -- Stripe 2
+--     rect(mon, x + 6, y, 2, 2, colors.black)  -- Stripe 3
+--     rect(mon, x + 8, y + 1, 1, 1, colors.gray) -- Stinger
 
---     -- Глаз
+--     -- Eye
 --     mon.setCursorPos(x, y)
 --     mon.setBackgroundColor(colors.white)
 --     mon.write(" ")
 -- end
 
--- Кнопка BREED – цветок, капля и летающие пчелодетки (замедленная)
+-- BREED button - flower, droplet and flying bee larvae (slowed down)
 local function drawBreedButton(mon, frame)
     mon.setBackgroundColor(colors.black)
     mon.clear()
 
-    -- === 1. НАЗВАНИЕ ===
+    -- === 1. TITLE ===
     mon.setTextColor(colors.lime)
     mon.setCursorPos(4, 1)
     mon.write("BREED")
 
-    -- === 2. ЦВЕТОК (внизу) ===
+    -- === 2. FLOWER (at the bottom) ===
     mon.setTextColor(colors.green)
     for y = 7, 9 do
         mon.setCursorPos(6, y)
@@ -284,17 +285,17 @@ local function drawBreedButton(mon, frame)
     mon.setCursorPos(7, 7)
     mon.write("/")
 
-    -- === 3. КАПЛЯ (замедленная: 30 кадров вместо 10) ===
-    local dropPhase = (frame % 30)  -- теперь 30 кадров на падение
-    local dropY = 2 + math.floor(dropPhase * 9 / 30)  -- масштабируем на высоту 9
+    -- === 3. DROPLET (slowed down: 30 frames instead of 10) ===
+    local dropPhase = (frame % 30)  -- now 30 frames per fall
+    local dropY = 2 + math.floor(dropPhase * 9 / 30)  -- scale to height 9
     if dropY <= 8 then
         mon.setCursorPos(6, dropY)
         mon.setTextColor(colors.orange)
-        mon.write(string.char(7))  -- символ •
+        mon.write(string.char(7))  -- character •
     end
 
-    -- === 4. ЛЕТАЮЩИЕ ПЧЕЛОДЕТКИ (замедленное движение) ===
-    local slowFrame = math.floor(frame / 2)  -- в 2 раза медленнее
+    -- === 4. FLYING BEE LARVAE (slowed movement) ===
+    local slowFrame = math.floor(frame / 2)  -- 2 times slower
     for i = 1, 4 do
         local x = 2 + ((slowFrame * 2 + i * 7) % 11)
         local y = 2 + ((slowFrame * 3 + i * 5) % 5)
@@ -307,8 +308,8 @@ end
 function Buttons.drawAll(frame)
     local mons = getMonitors()
 
-    -- Постоянные буферы: создаются один раз на каждый монитор, затем
-    -- переиспользуются (не создаём окно на каждый кадр -> нет моргания).
+    -- Persistent buffers: created once per monitor, then
+    -- reused (we don't create a window every frame -> no blinking).
     local function drawWithBuffer(name, buttonMon, drawFn)
         if not buttonMon then return end
 
@@ -345,7 +346,7 @@ function Buttons.handleTouch(side, x, y)
     local mons = getMonitors()
     local monName = nil
 
-    -- Сначала пробуем по имени периферии (peripheral.getName)
+    -- First try by peripheral name (peripheral.getName)
     for name, mon in pairs(mons) do
         if mon and peripheral.getName(mon) == side then
             monName = name
@@ -353,7 +354,7 @@ function Buttons.handleTouch(side, x, y)
         end
     end
 
-    -- Fallback: сопоставить side с именами из конфига button_monitors
+    -- Fallback: match side against names from the button_monitors config
     if not monName then
         local bm = lib.peripherals.button_monitors or {}
         for k, v in pairs(bm) do

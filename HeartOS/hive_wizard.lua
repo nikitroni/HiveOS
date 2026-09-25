@@ -304,8 +304,8 @@ local function exitInfo(mon, text, color)
   os.sleep(2)
 end
 
---- Заморозить BeeOS перед запуском мастера (как freezeForEdit в config_beeos).
---- Если BeeOS занят (отправка пчёл) — freeze не пройдёт, мастер не откроется.
+--- Freeze BeeOS before starting the wizard (like freezeForEdit in config_beeos).
+--- If BeeOS is busy (sending bees) - freeze will not succeed, the wizard will not open.
 --- @param heartConfig table
 --- @return string|nil protocol or nil when the terminal rejected the freeze
 local function freezeBeeOS(heartConfig)
@@ -339,7 +339,7 @@ local function saveAndSend(map, mon, heartConfig, protocol)
   else
     chatError("Failed to send hives map: " .. tostring(msg2))
   end
-  ConfigManager.unfreezeTerminal(protocol)  -- best effort: размораживаем в любом случае
+  ConfigManager.unfreezeTerminal(protocol)  -- best effort: unfreeze in any case
 
   exitInfo(mon, "Saved " .. #map .. " hives.", ok and ok2 and COLORS.success or COLORS.error)
 end
@@ -361,9 +361,9 @@ function HiveWizard.create(mon, heartConfig)
   })
   os.sleep(3)
 
-  -- Замораживаем BeeOS на время мастера (как при Edit конфига BeeOS):
-  -- ульи — часть BeeOS, он не должен работать, пока карта редактируется.
-  -- Если BeeOS занят — отказ и мастер не открывается.
+  -- Freeze BeeOS for the duration of the wizard (as when editing the BeeOS config):
+  -- hives are part of BeeOS, it must not work while the map is being edited.
+  -- If BeeOS is busy - refusal and the wizard does not open.
   local protocol = freezeBeeOS(heartConfig)
   if not protocol then
     return
@@ -463,8 +463,8 @@ function HiveWizard.edit(mon, heartConfig)
     return
   end
 
-  -- Замораживаем BeeOS на время мастера (как при Edit конфига BeeOS).
-  -- Если BeeOS занят — отказ и мастер не открывается.
+  -- Freeze BeeOS for the duration of the wizard (as when editing the BeeOS config).
+  -- If BeeOS is busy - refusal and the wizard does not open.
   local protocol = freezeBeeOS(heartConfig)
   if not protocol then
     return

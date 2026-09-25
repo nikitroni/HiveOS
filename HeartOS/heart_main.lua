@@ -1,15 +1,16 @@
 -- heart_main.lua
--- Точка входа HeartOS (центральный терминал управления)
--- Загружает конфиг, подключает монитор и запускает главное меню
+-- HeartOS entry point (central control terminal)
+-- Loads the config, connects the monitor and starts the main menu
 
 local heartConfig = require("heart_config")
 local ChatUtil = require("chat_util")
 local RednetProtocol = require("rednet_protocol")
 
--- ==================== ПОДКЛЮЧЕНИЕ МОНИТОРА ====================
+-- ==================== MONITOR CONNECTION ====================
 
 local function getMainMonitor()
     local side = heartConfig.main_monitor
+    --- @type table
     local mon = peripheral.wrap(side)
     if not mon then
         if not ChatUtil.isAvailable() then
@@ -45,7 +46,7 @@ if not hostOk then
     ChatUtil.sendError("HeartOS: rednet host failed: " .. tostring(hostErr))
 end
 
--- ==================== ЗАПУСК ИНТЕРФЕЙСА ====================
+-- ==================== UI STARTUP ====================
 
 local textScale = (heartConfig.hud and heartConfig.hud.text_scale) or 1
 mainMon.setTextScale(textScale)

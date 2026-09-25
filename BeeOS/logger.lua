@@ -1,8 +1,8 @@
 -- logger.lua
--- Модуль для логирования в файл (не на монитор и не в чат - чтобы не мешать
--- работе экранов и не терять данные). Файл: _logs/terminal.log в папке 0/
+-- Module for logging to a file (not to a monitor and not to chat - to avoid
+-- disturbing the screens and losing data). File: _logs/terminal.log in folder 0/
 
-local Logger = {}   -- <-- НЕ ЗАБЫТЬ: объявление модуля!
+local Logger = {}   -- <-- DON'T FORGET: module declaration!
 
 local LOG_DIR = "_logs"
 local LOG_FILE = "_logs/terminal.log"
@@ -25,8 +25,8 @@ function Logger.log(...)
         f.writeLine(line)
         f.close()
     end
-    -- В консоль компьютера НЕ дублируем (print использует term, а лог вызывается
-    -- в т.ч. из async-потоков и не должен трогать мониторы/терм)
+    -- Do NOT duplicate to the computer console (print uses term, and the log is
+    -- called from async threads and must not touch monitors/term)
 end
 
 return Logger

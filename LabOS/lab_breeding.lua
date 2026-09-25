@@ -42,6 +42,7 @@ local RELAY_SIDES = { "front", "back", "left", "right", "top", "bottom" }
 
 -- Chat notification with optional MOTD color code ("c" red, "e" yellow).
 local function chatMessage(msg, colorCode)
+  --- @type table
   local chat = peripheral.wrap(lib.chat_box)
   if not chat then
     print(msg)
@@ -92,6 +93,7 @@ local function scanBeesInChest()
   if type(readerName) ~= "string" or readerName == "" then
     return nil, "reader_bee not defined in config"
   end
+  --- @type table
   local reader = peripheral.wrap(readerName)
   if not reader then
     return nil, "bee reader missing"
@@ -133,11 +135,15 @@ local function hasMethod(methods, method)
 end
 
 -- Probe with a harmless OFF on "front": fails on boolean-only APIs.
+--- @param p table wrapped peripheral
 local function probeSideOutput(p)
   return pcall(function() p.setOutput("front", false) end) == true
 end
 
 -- Returns (method, useSides) for the relay, or (nil, false) when unsupported.
+--- @param name string peripheral name
+--- @param p table wrapped peripheral
+--- @return string|nil method, boolean useSides
 local function detectRelayMethod(name, p)
   local ok, methods = pcall(function() return peripheral.getMethods(name) end)
   if ok and type(methods) == "table" then
@@ -157,6 +163,10 @@ local function detectRelayMethod(name, p)
 end
 
 -- Drive the relay ON/OFF through the detected method, covering all sides.
+--- @param p table wrapped peripheral
+--- @param method string relay output method
+--- @param useSides boolean whether the method takes a side argument
+--- @param on boolean target state
 local function setRelayOutput(p, method, useSides, on)
   pcall(function()
     if method == "setOutput" then
@@ -175,6 +185,9 @@ local function setRelayOutput(p, method, useSides, on)
   end)
 end
 
+--- @param container table wrapped inventory
+--- @param itemName string
+--- @return number
 local function countByName(container, itemName)
   local total = 0
   for slot = 1, container.size() do
@@ -186,6 +199,8 @@ local function countByName(container, itemName)
   return total
 end
 
+--- @param container table wrapped inventory
+--- @return number
 local function countEmptyCages(container)
   local total = 0
   for slot = 1, container.size() do
@@ -199,6 +214,12 @@ end
 
 -- Move up to `count` of an item (matched by name) from source into target slot.
 -- Returns the amount actually moved.
+--- @param source table wrapped inventory
+--- @param targetName string destination peripheral name
+--- @param itemName string
+--- @param count number
+--- @param toSlot number
+--- @return number
 local function moveByName(source, targetName, itemName, count, toSlot)
   local moved = 0
   for slot = 1, source.size() do
@@ -216,6 +237,11 @@ local function moveByName(source, targetName, itemName, count, toSlot)
 end
 
 -- Move up to `count` empty cages from source into target slot.
+--- @param source table wrapped inventory
+--- @param targetName string destination peripheral name
+--- @param count number
+--- @param toSlot number
+--- @return number
 local function moveEmptyCages(source, targetName, count, toSlot)
   local moved = 0
   for slot = 1, source.size() do
@@ -233,6 +259,10 @@ local function moveEmptyCages(source, targetName, count, toSlot)
 end
 
 -- Wait until the slot holds an item, polling within the given timeout (seconds).
+--- @param container table wrapped inventory
+--- @param slot number
+--- @param timeout number seconds
+--- @return table|nil
 local function waitForItem(container, slot, timeout)
   local deadline = os.clock() + timeout
   while os.clock() < deadline do
@@ -263,9 +293,13 @@ function Breeding.run(logCallback)
   if not chamberName then return fail("breeding_chamber not defined in config") end
   if not incubatorName then return fail("incubator not defined in config") end
 
+  --- @type table
   local labChest = peripheral.wrap(labChestName)
+  --- @type table
   local resourceChest = peripheral.wrap(resourceChestName)
+  --- @type table
   local chamber = peripheral.wrap(chamberName)
+  --- @type table
   local incubator = peripheral.wrap(incubatorName)
 
   if not labChest then return fail("lab chest missing") end
@@ -387,6 +421,7 @@ function Breeding.run(logCallback)
   if type(relayName) ~= "string" or relayName == "" then
     return fail("clicker_breeding_relay not defined in config")
   end
+  --- @type table
   local relay = peripheral.wrap(relayName)
   if not relay then
     return fail("breeding automation relay missing")

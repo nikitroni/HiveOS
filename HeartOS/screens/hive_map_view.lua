@@ -36,9 +36,9 @@ local CELL_H = 1
 --   section, sections separated by `sectionGap` blank rows.
 -- Group 2 (left_right): columns step every stepX, rows every stepY,
 --   every `sectionSize` columns form a section, separated by sectionGap cols.
--- @param grid table hud.hive_map.grid
--- @param slot number slot number on the current page (1..48)
--- @return number|nil x, number|nil y, number CELL_W, number CELL_H
+--- @param grid table hud.hive_map.grid
+--- @param slot number slot number on the current page (1..48)
+--- @return number|nil x, number|nil y, number|nil CELL_W, number|nil CELL_H
 local function cellForSlot(grid, slot)
   for _, g in ipairs(grid.groups or {}) do
     if slot >= g.idStart and slot <= g.idStart + g.rows * g.cols - 1 then

@@ -1,14 +1,14 @@
 -- lab_geneproduction.lua
--- Модуль для производства недостающих генов через редстоун-реле.
--- Проверяет запасы ресурсов, запускает цикл импульсов, мониторит индексатор.
--- Принимает callback для вывода лога на экран.
+-- Module for producing missing genes via the redstone relay.
+-- Checks resource supplies, runs a pulse cycle, monitors the indexer.
+-- Accepts a callback for outputting the log to the screen.
 
 local lib = require("lab_lib")
 local Utils = require("lab_utils")
 
 local GeneProduction = {}
 
--- ==================== ПАРАМЕТРЫ ИЗ БИБЛИОТЕКИ ЛАБЫ ====================
+-- ==================== PARAMETERS FROM THE LAB LIBRARY ====================
 local per = lib.peripherals
 local relayName = per.relay or "redstone_relay_0"
 local relaySides = lib.relay_sides or {"front", "top", "back"}
@@ -23,13 +23,14 @@ local resourceItems = lib.resource_items or {
     "productivebees:honey_treat"
 }
 
--- ==================== ОТПРАВКА УВЕДОМЛЕНИЙ В ЧАТ ====================
+-- ==================== SENDING NOTIFICATIONS TO CHAT ====================
 local function chatMessage(msg, isError)
     Utils.sendChat(msg, isError)
 end
 
--- ==================== ПРОВЕРКА РЕСУРСОВ (каждый тип отдельно) ====================
+-- ==================== RESOURCE CHECK (each type separately) ====================
 function GeneProduction.checkResources()
+    --- @type table
     local chest = peripheral.wrap(resourceChestName)
     if not chest then
         chatMessage("Resource chest not found!", true)
@@ -53,7 +54,7 @@ function GeneProduction.checkResources()
         end
     end
 
-    -- Проверяем, что каждого ресурса достаточно (хотя бы 1)
+    -- Check that each resource is sufficient (at least 1)
     for _, itemName in ipairs(resourceItems) do
         if counts[itemName] == 0 then
             chatMessage("Missing " .. itemName, true)
@@ -63,7 +64,7 @@ function GeneProduction.checkResources()
     return true
 end
 
--- ==================== ПРОВЕРКА ДОСТАТОЧНОСТИ ГЕНОВ ====================
+-- ==================== GENE SUFFICIENCY CHECK ====================
 function GeneProduction.getShortages()
     local counts = Utils.getGeneCountsFromIndexer()
     local shortages = {}
@@ -84,9 +85,10 @@ function GeneProduction.getShortagesFor(targets)
     return shortages
 end
 
--- ==================== ЗАПУСК ПРОИЗВОДСТВА ОДНОГО ЦИКЛА ====================
+-- ==================== STARTING PRODUCTION OF ONE CYCLE ====================
 function GeneProduction.produceCycle(logCallback)
     logCallback = logCallback or function() end
+    --- @type table
     local relay = peripheral.wrap(relayName)
     if not relay then
         chatMessage("Redstone relay not found! Production aborted.", true)
@@ -95,7 +97,7 @@ function GeneProduction.produceCycle(logCallback)
 
     logCallback(">pulse seq...")
 
-    -- Загружаем параметры цикла из библиотеки
+    -- Load the cycle parameters from the library
     local rc = lib.relay_cycle
     local phase1_dur = rc.phase1_back_top_duration or 5
     local phase2_delay = rc.phase2_delay or 1
@@ -103,7 +105,7 @@ function GeneProduction.produceCycle(logCallback)
     local pulse2_dur = rc.phase2_front_pulse_duration or 0.5
     local pulse2_int = rc.phase2_front_pulse_interval or 1
 
-    -- Фаза 1: включить back и top постоянно
+    -- Phase 1: turn back and top ON continuously
     logCallback(" phase1: back+top ON")
     local okBack, errBack = pcall(relay.setOutput, "back", true)
     if not okBack then
@@ -120,14 +122,14 @@ function GeneProduction.produceCycle(logCallback)
     pcall(relay.setOutput, "back", false)
     pcall(relay.setOutput, "top", false)
 
-    -- Пауза
+    -- Pause
     if phase2_delay > 0 then
         logCallback(string.format(" pause %ds", phase2_delay))
         sleep(phase2_delay)
         sleep(0.01)
     end
 
-    -- Фаза 2: пульсация на front
+    -- Phase 2: pulse on front
     logCallback(" phase2: front pulses")
     local start2 = os.clock()
     local endPhase2 = start2 + phase2_dur

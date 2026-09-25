@@ -5,31 +5,31 @@ local configList = require("tech.HUD_tech_config_1")
 local configDetail = require("tech.HUD_tech_config_2")
 local LabManager = require("lab_manager")
 local Logger = require("logger")
--- paintutils глобален
+-- paintutils is global
 
--- Состояние
+-- State
 local mode = "list"
 local currentPage = 1
 local selectedHiveIndex = 1
 
--- Опции запуска (устанавливаются в run; handleClick использует их, напр. sendToLab)
+-- Startup options (set in run; handleClick uses them, e.g. sendToLab)
 local sharedOpts = nil
 
--- Таймерные счётчики (модульные, доступны и processTick, и run)
+-- Timer counters (module-level, available to both processTick and run)
 local lastUpdateTime = os.clock()
 local updateInterval = 5
 local timerTicks = 0
 
--- Время последнего клика (debounce двойных touch-событий)
+-- Time of the last click (debounce of double touch events)
 local lastTouchTime = 0
 
--- Цвета фона
+-- Background colors
 local BG_LIST = colors.lightGray
 local BG_DETAIL_DARK = colors.black
 local BG_DETAIL_GREY = colors.gray
 local BG_SYMBOL_LIGHT = colors.lightGray
 
--- ====================== ОТРИСОВКА СПИСКА ======================
+-- ====================== LIST DRAWING ======================
 
 local function drawListCell(mon, hive, baseX, baseY)
     local off = configList.offsets
@@ -129,7 +129,7 @@ local function drawList(mon)
     mon.setBackgroundColor(colors.black)
 end
 
--- ====================== ОТРИСОВКА ДЕТАЛЬНОГО ЭКРАНА ======================
+-- ====================== DETAIL SCREEN DRAWING ======================
 
 local function drawDetail(mon, hive)
     local cfg = configDetail
@@ -146,7 +146,7 @@ local function drawDetail(mon, hive)
         mon.clear()
     end
 
-    -- Декоративные соты (на сером фоне)
+    -- Decorative honeycombs (on gray background)
     if cfg.honeycomb then
         mon.setBackgroundColor(BG_DETAIL_GREY)
         local hc = cfg.honeycomb
@@ -162,15 +162,15 @@ local function drawDetail(mon, hive)
         end
     end
 
-    -- === Верхняя часть (чёрный фон) ===
+    -- === Upper part (black background) ===
     mon.setBackgroundColor(BG_DETAIL_DARK)
 
-    -- Заголовок улья
+    -- Hive header
     mon.setCursorPos(stats.hive_text.x, stats.hive_text.y)
     mon.setTextColor(colors.yellow)
     mon.write(string.format(stats.hive_template, hive.id))
 
-    -- Апгрейды с символом '>' (на чёрном фоне)
+    -- Upgrades with the '>' symbol (on black background)
     local upgrades = (hive.data and hive.data.upgrades) or {}
     for i = 1, stats.upgrade_count do
         local y = stats.upgrade_list.y + (i - 1)
@@ -193,7 +193,7 @@ local function drawDetail(mon, hive)
         end
     end
 
-    -- Прогресс-бар
+    -- Progress bar
     local percent = 0
     if hive.data and hive.data.inventoryPercent then
         percent = hive.data.inventoryPercent
@@ -211,7 +211,7 @@ local function drawDetail(mon, hive)
         mon.write(bar.char)
     end
 
-    -- Проценты и %
+    -- Percent and %
     local pStr = string.format("%03d", math.floor(percent))
     mon.setCursorPos(stats.bar_text.percent_x, bar.y)
     mon.setTextColor(barColor)
@@ -225,7 +225,7 @@ local function drawDetail(mon, hive)
     mon.setTextColor(colors.lightGray)
     mon.write("-")
 
-    -- Статистика слотов, сот, пыльцы (из данных)
+    -- Slot, comb, pollen statistics (from data)
     local rows = stats.rows
     if hive.data then
         mon.setCursorPos(rows.slots.x, rows.slots.y)
@@ -250,7 +250,7 @@ local function drawDetail(mon, hive)
         mon.write("?/9")
     end
 
-    -- === Нижняя часть: карточки пчёл ===
+    -- === Lower part: bee cards ===
     local bees = (hive.data and hive.data.bees) or {}
     for cellIdx = 1, 5 do
         local col = (cellIdx - 1) % 3
@@ -262,14 +262,14 @@ local function drawDetail(mon, hive)
 
         if cellIdx <= #bees then
             local bee = bees[cellIdx]
-            -- Имя пчелы (обрезаем до 10 символов)
+            -- Bee name (truncated to 10 characters)
             local beeName = Genetics.formatBeeName(bee.type) or "Unknown"
             if #beeName > 10 then beeName = beeName:sub(1,10) end
             mon.setCursorPos(baseX + off.title.x, baseY + off.title.y)
             mon.setTextColor(colors.white)
             mon.write(string.format("%s#%d", beeName, cellIdx))
 
-            -- Гены
+            -- Genes
             local geneMap = {
                 { nameKey = "bee_productivity",      title = off.gene_Productivity,     val = off.gene_Productivity_val },
                 { nameKey = "bee_weather_tolerance", title = off.gene_W_Tolerance,      val = off.gene_W_Tolerance_val },
@@ -279,25 +279,25 @@ local function drawDetail(mon, hive)
             for gIdx, gene in ipairs(geneMap) do
                 local level = bee.genes and bee.genes[gene.nameKey]
 
-                -- Символ "-" перед названием гена (светло-серый фон)
+                -- "-" symbol before the gene name (light gray background)
                 mon.setBackgroundColor(BG_SYMBOL_LIGHT)
                 mon.setCursorPos(baseX + off.prefix_gene.x, baseY + off.prefix_gene.y + (gIdx-1)*2)
                 mon.setTextColor(colors.white)
                 mon.write("-")
 
-                -- Название гена (серый фон)
+                -- Gene name (gray background)
                 mon.setBackgroundColor(BG_DETAIL_GREY)
                 mon.setCursorPos(baseX + gene.title.x, baseY + gene.title.y)
                 mon.setTextColor(colors.white)
                 mon.write(Genetics.genes[gene.nameKey].name)
 
-                -- Символ ">" перед значением (светло-серый фон)
+                -- ">" symbol before the value (light gray background)
                 mon.setBackgroundColor(BG_SYMBOL_LIGHT)
                 mon.setCursorPos(baseX + off.prefix_gene.x, baseY + off.prefix_gene.y + (gIdx-1)*2 + 1)
                 mon.setTextColor(colors.white)
                 mon.write(">")
 
-                -- Значение гена (серый фон)
+                -- Gene value (gray background)
                 mon.setBackgroundColor(BG_DETAIL_GREY)
                 mon.setCursorPos(baseX + gene.val.x, baseY + gene.val.y)
                 if level then
@@ -310,14 +310,14 @@ local function drawDetail(mon, hive)
                 end
             end
         else
-            -- Пустая ячейка
+            -- Empty cell
             mon.setCursorPos(baseX + off.title.x, baseY + off.title.y)
             mon.setTextColor(colors.red)
             mon.write(cfg.labels.no_bee)
         end
     end
 
-    -- Футер детального экрана
+    -- Detail screen footer
     local f = configDetail.footer
     if f then
         local pageText = string.format(f.page.label, selectedHiveIndex, math.max(totalHives, 1))
@@ -343,7 +343,7 @@ local function drawDetail(mon, hive)
     mon.setBackgroundColor(colors.black)
 end
 
--- ====================== ОБРАБОТКА КЛИКОВ ======================
+-- ====================== CLICK HANDLING ======================
 
 local function handleClick(mon, x, y)
     if mode == "list" then
@@ -367,22 +367,22 @@ local function handleClick(mon, x, y)
                 end
             end
         end
-        -- Кнопки навигации в списке (если будут добавлены)
+        -- Navigation buttons in the list (if any are added)
     elseif mode == "detail" then
         local s = configDetail.screen
         if not s then return end
         if x >= s.lab_button.x1 and x <= s.lab_button.x2 and y >= s.lab_button.y1 and y <= s.lab_button.y2 then
     local hive = HiveReader.getHives()[selectedHiveIndex]
     if hive then
-                local hiveBlockName = hive.hiveBlock   -- это строка из конфига
+                local hiveBlockName = hive.hiveBlock   -- this is a string from the config
         if hiveBlockName then
-            -- Неблокирующая отправка: startSend начинает state-машину,
-            -- завершение идёт по таймеру через sendTick.
+            -- Non-blocking send: startSend begins the state machine,
+            -- completion is driven by the timer via sendTick.
             if sharedOpts and sharedOpts.sendToLab then
                 sharedOpts.sendToLab(selectedHiveIndex, hive.data, hiveBlockName)
                 Logger.log("LAB: send started (non-blocking) for hive " .. selectedHiveIndex)
             else
-                -- Fallback: синхронный запуск без таймера (не должен случиться)
+                -- Fallback: synchronous start without the timer (should not happen)
                 LabManager.startSend(selectedHiveIndex, hive.data, hiveBlockName)
                 Logger.log("LAB: send (no tick available) for hive " .. selectedHiveIndex)
             end
@@ -407,9 +407,9 @@ local function handleClick(mon, x, y)
     end
 end
 
--- ====================== ОСНОВНОЙ ЦИКЛ ======================
+-- ====================== MAIN LOOP ======================
 
--- Один тик (только heartbeat + данные + watchdog, БЕЗ info/sendTick)
+-- One tick (heartbeat + data + watchdog only, WITHOUT info/sendTick)
 local dataBusy = false
 local function processTick(mon, opts, now)
     timerTicks = (timerTicks or 0) + 1
@@ -417,10 +417,10 @@ local function processTick(mon, opts, now)
         Logger.log("TECH heartbeat tick " .. timerTicks)
     end
 
-    -- Watchdog: если отправка зависла >60с — сброс
+    -- Watchdog: if sending is stuck >60s - reset
     LabManager.abortStuckSend()
 
-    -- Асинхронный запрос данных (воркер HiveReader.worker живёт отдельно)
+    -- Asynchronous data request (the HiveReader.worker lives separately)
     if now - lastUpdateTime >= updateInterval and not dataBusy and not LabManager.isSending() then
         dataBusy = true
         HiveReader.requestUpdate()
@@ -432,9 +432,9 @@ local function run(mon, opts)
     sharedOpts = opts
     LabManager.reset()
 
-    -- Сброс модульного состояния: после freeze/reload модуль не
-    -- перезагружается (require кэширован), поэтому dataBusy мог залипнуть
-    -- между запусками экранов и данные перестали обновляться.
+    -- Reset module state: after freeze/reload the module is not
+    -- reloaded (require is cached), so dataBusy could get stuck
+    -- between screen runs and data stopped updating.
     dataBusy = false
     lastUpdateTime = os.clock()
 
@@ -448,8 +448,8 @@ local function run(mon, opts)
         return res
     end
 
-    -- Действие выхода, выставляется внутри pcall и проверяется ПОСЛЕ него.
-    -- return внутри pcall выходит только из анонимной функции, а не из run.
+    -- Exit action, set inside pcall and checked AFTER it.
+    -- return inside pcall exits only the anonymous function, not run.
     local exitAction = nil
 
     local function redrawCurrent()
@@ -461,7 +461,7 @@ local function run(mon, opts)
         mode = "list"
     end
 
-    -- Первый кадр сразу
+    -- First frame immediately
     local okFirst = pcall(redrawCurrent)
     if not okFirst then Logger.log("TECH: initial draw failed") end
     HiveReader.requestUpdate()
@@ -469,7 +469,7 @@ local function run(mon, opts)
     local lastTickTime = os.clock()
     local tickTimer = os.startTimer(0.1)
 
-    -- Простой loop без parallel: parallel-оркестрация в BeeOs.runScreens
+    -- Simple loop without parallel: parallel orchestration is in BeeOs.runScreens
     while true do
         local event, p1, p2, p3 = os.pullEvent()
         local now = os.clock()
@@ -481,8 +481,8 @@ local function run(mon, opts)
                     local okT = pcall(processTick, mon, opts, now)
                     if not okT then Logger.log("TECH: processTick error") end
                 end
-                -- Перезапускаем таймер ВНЕ проверки lastTickTime: иначе ранний
-                -- таймер не будет перезапущен и цикл тиков умрёт.
+                -- Restart the timer OUTSIDE the lastTickTime check: otherwise an early
+                -- timer will not be restarted and the tick loop will die.
                 tickTimer = os.startTimer(0.1)
 
             elseif event == "monitor_touch" and p1 == peripheral.getName(mon) then
@@ -500,8 +500,8 @@ local function run(mon, opts)
                     local okH, action = pcall(opts.rednetHandler, sender, msg)
                     if okH then
                         Logger.log("TECH: rednetHandler action='" .. tostring(action) .. "'")
-                        -- Не выходим из pcall через return: только флаг,
-                        -- а выход выполняем ПОСЛЕ pcall (вне анонимной функции).
+                        -- Do not exit pcall via return: only set the flag,
+                        -- and perform the exit AFTER pcall (outside the anonymous function).
                         if action == "reload" or action == "freeze" then
                             exitAction = action
                         end

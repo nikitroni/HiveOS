@@ -451,7 +451,7 @@ if not deviceFound and not skipRequestedThisType and not cancelled then
                 elseif confirmed == nil then
                     chatError("Response timeout. Try again.")
                 elseif confirmed then
-                    -- Переместить уже добавленные найденные первыми?
+                    -- Move the already added found ones first?
                     table.insert(foundDevices, name)
                     chatSuccess("Added: " .. ChatUtil.device(name) .. " -> " .. ChatUtil.device(label))
 

@@ -1,11 +1,11 @@
 -- config_manager.lua
--- Модуль управления конфигами: сохранение, загрузка, валидация, rednet-протокол
--- Используется HeartOS для управления конфигами BeeOS и LabOS
+-- Config management module: saving, loading, validation, rednet protocol
+-- Used by HeartOS to manage BeeOS and LabOS configs
 --
--- ВНИМАНИЕ: типы устройств живут в device_types.lua (единый источник правды).
--- Список устройств для создания конфига берётся оттуда по group.
--- Конфиг содержит ТОЛЬКО периферию (имена блоков). Все остальные настройки
--- (слоты, координаты, логика) — жёстко зашиты в самих скриптах BeeOS/LabOS.
+-- ATTENTION: device types live in device_types.lua (single source of truth).
+-- The device list for creating a config is taken from there by group.
+-- The config contains ONLY peripherals (block names). All other settings
+-- (slots, coordinates, logic) are hard-coded in the BeeOS/LabOS scripts themselves.
 
 local ChatUtil = require("chat_util")
 local RednetProtocol = require("rednet_protocol")
@@ -26,7 +26,7 @@ end
 
 -- ==================== CORE FUNCTIONS ====================
 
---- Сохранить таблицу в файл как Lua-скрипт с return
+--- Save a table to a file as a Lua script with return
 --- @param data table
 --- @param filePath string
 --- @return boolean, string
@@ -41,7 +41,7 @@ function ConfigManager.saveToFile(data, filePath)
     return true, path
 end
 
---- Загрузить таблицу из файла (выполняет как Lua-скрипт)
+--- Load a table from a file (executes it as a Lua script)
 --- @param filePath string
 --- @return table|nil, string|nil
 function ConfigManager.loadFromFile(filePath)
@@ -61,7 +61,7 @@ function ConfigManager.loadFromFile(filePath)
     end
 end
 
---- Создать резервную копию файла
+--- Create a backup copy of the file
 --- @param filePath string
 --- @return boolean, string
 function ConfigManager.backupFile(filePath)
@@ -79,7 +79,7 @@ function ConfigManager.backupFile(filePath)
         backupName = fileName .. "_backup"
     end
     local backupPath = fs.combine(backupDir, backupName)
-    -- Удаляем старый бекап, если есть (fs.copy не перезаписывает)
+    -- Delete the old backup if any (fs.copy does not overwrite)
     if fs.exists(backupPath) then
         fs.delete(backupPath)
     end
@@ -89,7 +89,7 @@ end
 
 -- ==================== VALIDATION ====================
 
---- Проверить, существует ли периферия с данным именем
+--- Check whether a peripheral with the given name exists
 --- @param name string
 --- @return boolean
 function ConfigManager.checkPeripheralExists(name)
@@ -102,7 +102,7 @@ function ConfigManager.checkPeripheralExists(name)
     return false
 end
 
---- Проверить, используется ли периферия в конфиге (рекурсивно)
+--- Check whether the peripheral is used in the config (recursively)
 local function isPeripheralUsedIn(peripheralName, config, excludeKey)
     if not config then return false end
     for key, value in pairs(config) do
@@ -119,7 +119,7 @@ local function isPeripheralUsedIn(peripheralName, config, excludeKey)
     return false
 end
 
---- Проверить, не используется ли устройство в существующих конфигах
+--- Check whether the device is already used in existing configs
 function ConfigManager.isDeviceAlreadyUsed(peripheralName, existingConfigs)
     for _, config in ipairs(existingConfigs) do
         if isPeripheralUsedIn(peripheralName, config) then
@@ -129,26 +129,26 @@ function ConfigManager.isDeviceAlreadyUsed(peripheralName, existingConfigs)
     return false
 end
 
--- ==================== CONFIG CREATION (результат из ConfigWizard) ====================
+-- ==================== CONFIG CREATION (result from ConfigWizard) ====================
 
---- Создать конфиг из результата config_wizard.
---- Входной формат (из ConfigWizard): { tech_monitor = "name", info_monitors = {"name1", ...}, ... }
---- Ключи уже соответствуют device_types.lua, группируем их в таблицу `peripherals`.
+--- Create a config from a config_wizard result.
+--- Input format (from ConfigWizard): { tech_monitor = "name", info_monitors = {"name1", ...}, ... }
+--- The keys already match device_types.lua, we group them into the `peripherals` table.
 --- @param devices table
 --- @return table
 function ConfigManager.createConfig(devices)
-    -- Периферия из wizard'а. Все ключи — из device_types.lua.
+    -- Peripherals from the wizard. All keys are from device_types.lua.
     local config = {
         peripherals = devices,
     }
     return config
 end
 
---- Создать карту ульев из результата hive_wizard.
---- Каждая запись — один улей с 3 перифериями:
----   hive   = периферия самого улья (beehive/cage, методы инвентаря)
----   reader = блок-ридер (getBlockData)
----   relay  = редстоун-реле (setBundledOutput / setAnalogOutput)
+--- Create a hive map from a hive_wizard result.
+--- Each entry - one hive with 3 peripherals:
+---   hive   = the hive peripheral itself (beehive/cage, inventory methods)
+---   reader = reader block (getBlockData)
+---   relay  = redstone relay (setBundledOutput / setAnalogOutput)
 --- @param hives table array of { hive, reader, relay }
 --- @return table array of { id, hive, reader, relay }
 function ConfigManager.createHivesMap(hives)
@@ -164,9 +164,9 @@ function ConfigManager.createHivesMap(hives)
     return map
 end
 
---- Найти запись улья по id (для других скриптов)
---- @param map table карта из createHivesMap
---- @param id number id улья
+--- Find a hive entry by id (for other scripts)
+--- @param map table map from createHivesMap
+--- @param id number hive id
 --- @return table|nil { id, hive, reader, relay }
 function ConfigManager.findHiveById(map, id)
     if type(map) ~= "table" then return nil end
@@ -180,7 +180,7 @@ end
 
 -- ==================== SAVE WITH BACKUP ====================
 
---- Сохранить конфиг с авто-бекапом
+--- Save the config with auto-backup
 --- @param data table
 --- @param filePath string
 --- @return boolean, string
@@ -199,10 +199,10 @@ end
 
 local DEFAULT_TIMEOUT = 5
 
---- Отправить rednet-сообщение и ждать ответа ТОЛЬКО от targetId.
---- Принимаем только СТРОКОВЫЕ ответы (free/frozen/config_updated/running/...).
---- Табличные сообщения игнорируются и ждём дальше - гарантирует, что busy?
---- не словит чужое.
+--- Send a rednet message and wait for a reply ONLY from targetId.
+--- We accept only STRING replies (free/frozen/config_updated/running/...).
+--- Table messages are ignored and we keep waiting - guarantees that busy?
+--- does not catch someone else's.
 --- @param targetId number resolved terminal id
 --- @param protocol string protocol label used as the rednet message tag
 --- @param command string
@@ -226,7 +226,7 @@ function ConfigManager.rednetCall(targetId, protocol, command, data, timeout)
         if sender == targetId and type(response) == "string" then
             return true, response
         end
-        -- Иначе (чужие или табличные/статус-сообщения) игнорируем и ждём
+        -- Otherwise (foreign or table/status messages) ignore and keep waiting
         if os.clock() >= deadline then
             return false, "No response (timeout " .. timeout .. "s)"
         end
@@ -235,9 +235,9 @@ end
 
 -- ==================== REDNET CONFIG PROTOCOL ====================
 
---- Проверить, свободен ли терминал (используется редко; основная защита от
---- редактирования занятого терминала - в freezeTerminal, который получает
---- "wait"/не-"frozen" если терминал занят).
+--- Check whether the terminal is free (rarely used; the main protection against
+--- editing a busy terminal is in freezeTerminal, which gets
+--- "wait"/not-"frozen" if the terminal is busy).
 function ConfigManager.checkTerminalBusy(protocol, timeout)
     local id = ConfigManager.resolve(protocol)
     if not id then
@@ -255,7 +255,7 @@ function ConfigManager.checkTerminalBusy(protocol, timeout)
     return false, "Unknown response: " .. tostring(response)
 end
 
---- Отправить конфиг терминалу с протоколом заморозки
+--- Send a config to the terminal with the freeze protocol
 function ConfigManager.sendConfigToTerminal(protocol, configData, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
 
@@ -296,7 +296,7 @@ function ConfigManager.sendConfigToTerminal(protocol, configData, timeout)
     return true, "Config sent and applied"
 end
 
---- Отправить начальный конфиг терминалу (без заморозки)
+--- Send the initial config to the terminal (without freezing)
 function ConfigManager.sendInitialConfig(protocol, configData, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
 
