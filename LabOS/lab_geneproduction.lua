@@ -10,7 +10,7 @@ local GeneProduction = {}
 
 -- ==================== PARAMETERS FROM THE LAB LIBRARY ====================
 local per = lib.peripherals
-local relayName = per.relay or "redstone_relay_0"
+local relayName = per.relay or ""
 local relaySides = lib.relay_sides or {"front", "top", "back"}
 local pulseDuration = lib.relay_pulse_duration or 2
 local pauseBetween = 1

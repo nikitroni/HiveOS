@@ -79,7 +79,11 @@ end
 
 local function drawList(mon)
     local totalHives = HiveReader.count()
-    local totalPages = math.ceil(totalHives / configList.grid.hives_per_page)
+    local totalPages = math.max(1, math.ceil(totalHives / configList.grid.hives_per_page))
+
+    -- Clamp: the hive count may shrink between sessions/updates.
+    if currentPage > totalPages then currentPage = totalPages end
+    if currentPage < 1 then currentPage = 1 end
 
     local bg = paintutils.loadImage("tech/HUD_tech_1.nfp")
     if bg then
@@ -349,6 +353,29 @@ local function handleClick(mon, x, y)
     if mode == "list" then
         local grid = configList.grid
         local hives = HiveReader.getHives()
+        local totalPages = math.max(1, math.ceil(HiveReader.count() / grid.hives_per_page))
+
+        -- Page navigation is checked BEFORE the hive cells: the footer buttons
+        -- (y=31..33) overlap the last grid row (cellY2 = 31), so a footer click
+        -- would otherwise sometimes open a hive instead of flipping the page.
+        local s = configList.screen
+        if s and s.next_button and x >= s.next_button.x1 and x <= s.next_button.x2
+            and y >= s.next_button.y1 and y <= s.next_button.y2 then
+            if currentPage < totalPages then
+                currentPage = currentPage + 1
+                drawList(mon)
+            end
+            return
+        end
+        if s and s.back_button and x >= s.back_button.x1 and x <= s.back_button.x2
+            and y >= s.back_button.y1 and y <= s.back_button.y2 then
+            if currentPage > 1 then
+                currentPage = currentPage - 1
+                drawList(mon)
+            end
+            return
+        end
+
         local startIdx = (currentPage - 1) * grid.hives_per_page + 1
         for i = 1, grid.hives_per_page do
             local hiveIdx = startIdx + i - 1
@@ -367,7 +394,6 @@ local function handleClick(mon, x, y)
                 end
             end
         end
-        -- Navigation buttons in the list (if any are added)
     elseif mode == "detail" then
         local s = configDetail.screen
         if not s then return end

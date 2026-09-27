@@ -95,6 +95,42 @@ local function mergePeripheralNames(labLib, dynamicConfig)
     end
 end
 
+-- ==================== CHAT BOX RESOLUTION ====================
+
+-- LabOS must not rely on a hardcoded chat box name (the user's peripheral may be
+-- chat_box_0, chat_box_1, ...). Prefer the name from the HeartOS config when given,
+-- otherwise search for any peripheral exposing sendMessage (same approach as
+-- HeartOS chat_util.lua).
+local function findChatBoxByMethod()
+    for _, name in ipairs(peripheral.getNames()) do
+        local ok, methods = pcall(peripheral.getMethods, name)
+        if ok and type(methods) == "table" then
+            for _, method in ipairs(methods) do
+                if method == "sendMessage" then
+                    return name
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function resolveChatBox(labLib, dynamicConfig)
+    local name = nil
+    local dynamicPeripherals = dynamicConfig and dynamicConfig.peripherals
+    if type(dynamicPeripherals) == "table" then
+        local candidate = dynamicPeripherals.chat_box
+        if type(candidate) == "string" and candidate ~= "" then
+            name = candidate
+        end
+    end
+    if not name or not peripheral.isPresent(name) then
+        name = findChatBoxByMethod()
+    end
+    -- Empty string means "not found": consumers wrap it, get nil and skip chat.
+    labLib.chat_box = name or ""
+end
+
 -- ==================== PERIPHERAL PRESENCE CHECK ====================
 
 local function checkPeripherals(labLib)
@@ -118,7 +154,11 @@ local function checkPeripherals(labLib)
     checkName(p.incubator, "incubator")
     checkName(p.relay, "relay")
     checkName(p.clicker_breeding_relay, "clicker_breeding_relay")
-    checkName(labLib.chat_box, "chat_box")
+    if type(labLib.chat_box) == "string" and labLib.chat_box ~= "" then
+        checkName(labLib.chat_box, "chat_box")
+    else
+        print("lab_config_loader: chat_box not found (chat notifications disabled)")
+    end
     if type(p.crafters) == "table" then
         for i, v in ipairs(p.crafters) do
             checkName(v, "crafter_" .. i)
@@ -145,6 +185,8 @@ local function load()
     if dynamicConfig then
         mergePeripheralNames(labLib, dynamicConfig)
     end
+
+    resolveChatBox(labLib, dynamicConfig)
 
     checkPeripherals(labLib)
 

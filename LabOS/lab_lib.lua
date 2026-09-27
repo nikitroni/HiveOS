@@ -200,7 +200,8 @@ lab.relay_cycle = {
 }
 
 -- ==================== MISCELLANEOUS ====================
-lab.chat_box = "chat_box_0"
+-- Resolved at load time by lab_config_loader (config name or method search).
+lab.chat_box = ""
 lab.bg_file = "HUD_lab.nfp"
 
 return lab
