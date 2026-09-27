@@ -102,8 +102,6 @@ Details for all three systems are in [Systems Documentation](docs/systems.md).
 
 ![LabOS breeding](docs/screenshots/labos_breeding.png)
 
-*LabOS breeding screen — cycle progress and the upgrade log.*
-
 ## 🗺️ Roadmap
 
 - **v1.0** — three terminals, hive map, breeding, genetics, installer and configuration wizard (done).
