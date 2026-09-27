@@ -119,4 +119,6 @@ sequenceDiagram
 
 ![Экран карты ульев](screenshots/hive_map.png)
 
+**Схема подключения улья** — три блока одного улья (улей, reader, relay) и то, как они взаимодействуют между собой.
+
 ![Связка улья](screenshots/hive_setup.png)

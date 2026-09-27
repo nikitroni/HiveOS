@@ -86,9 +86,9 @@ Details for all three systems are in [Systems Documentation](docs/systems.md).
 
 > Screenshots from the live setup.
 
-![HeartOS main menu](docs/screenshots/heartos_main.png)
+**HeartOS control center** — Configure BeeOS / LabOS / Hive and the gene Library.
 
-*HeartOS control center — Configure BeeOS / LabOS / Hive and the gene Library.*
+![HeartOS main menu](docs/screenshots/heartos_main.png)
 
 **BeeOS hive monitors** — the tech hive list and the compact info overview.
 
@@ -97,6 +97,8 @@ Details for all three systems are in [Systems Documentation](docs/systems.md).
 ![BeeOS tech monitor — hive detail](docs/screenshots/beeos_tech_mon_2.png)
 
 ![BeeOS info monitor](docs/screenshots/beeos_info_1.png)
+
+**LabOS breeding** — cycle progress and the upgrade log.
 
 ![LabOS breeding](docs/screenshots/labos_breeding.png)
 

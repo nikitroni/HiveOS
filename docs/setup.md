@@ -83,19 +83,3 @@ While HeartOS edits a config, the target terminal is frozen (it shows the wait s
 - **HeartOS** should list the configured devices under View, and the **Hive Map** screen should show each hive as a green 2-digit cell.
 
 If a terminal keeps waiting, re-check that its config was pushed and that every scanned peripheral still exists and is connected.
-
-## Screenshots
-
-> Screenshots from the live setup.
-
-**HeartOS main menu** — the control center landing screen with the Configure / Library buttons.
-
-![HeartOS main menu](screenshots/heartos_main.png)
-
-**BeeOS hive map** — the hive list with live status colors.
-
-![BeeOS hive map](screenshots/beeos_tech_mon_1.png)
-
-**LabOS breeding** — the lab screen during a breeding run.
-
-![LabOS breeding](screenshots/labos_breeding.png)

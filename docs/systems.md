@@ -119,4 +119,6 @@ This is how you match a cell on the map to a physical hive in the world.
 
 ![Hive map screen](screenshots/hive_map.png)
 
+**Hive wiring** — the three blocks that form one hive (hive, reader, relay) and how they interact.
+
 ![Hive setup](screenshots/hive_setup.png)

@@ -86,9 +86,9 @@ flowchart LR
 
 > Скриншоты реальной сборки.
 
-![Главное меню HeartOS](docs/screenshots/heartos_main.png)
+**Центр управления HeartOS** — Configure BeeOS / LabOS / Hive и библиотека генов.
 
-*Центр управления HeartOS — Configure BeeOS / LabOS / Hive и библиотека генов.*
+![Главное меню HeartOS](docs/screenshots/heartos_main.png)
 
 **Мониторы ульев BeeOS** — технический список ульев и компактный info-обзор.
 
@@ -97,6 +97,8 @@ flowchart LR
 ![Технический монитор BeeOS — детальный экран](docs/screenshots/beeos_tech_mon_2.png)
 
 ![Info-монитор BeeOS](docs/screenshots/beeos_info_1.png)
+
+**Экран разведения LabOS** — прогресс цикла и лог улучшений.
 
 ![Разведение LabOS](docs/screenshots/labos_breeding.png)
 
