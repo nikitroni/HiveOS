@@ -2,10 +2,11 @@
 
 # HiveOS — Systems
 
-This document describes the three internal systems of HiveOS: the terminal architecture, the breeding pipeline and the hive map.
+This document describes the internal systems of HiveOS: the terminal architecture, the breeding pipeline, gene production and the hive map.
 
 - [Architecture](#architecture)
 - [Breeding](#breeding)
+- [Gene Production](#gene-production)
 - [Hive Map](#hive-map)
 
 ## Architecture
@@ -82,9 +83,19 @@ The breeding setup links these blocks:
 
 Parent bees cannot be extracted by script from the breeding chamber, so they are returned by the automation rather than by LabOS. After the run, HiveOS highlights a chat message asking you to remove the parents if the automation did not do it.
 
-> Replace with a real capture saved as `docs/screenshots/breeding_setup.png`.
+![Breeding setup](screenshots/breeding_setup.gif)
 
-![Breeding setup](https://placehold.co/800x450/1e1e1e/ffffff?text=Breeding+Setup)
+## Gene Production
+
+Gene production is handled by `LabOS/lab_geneproduction.lua` and is started by the **GENE PRODUCTION** button on the lab. It tops up the gene indexer with the genes the bees are still missing.
+
+The run first checks that the resource chest holds enough sunflowers and honey treats, then reads the current gene counts from the indexer through its Block Reader. If nothing is missing, it finishes immediately.
+
+Otherwise it repeats a pulse cycle on the redstone relay: it holds `back` and `top` ON to move the input, then pulses `front` to trigger production. After each cycle it re-reads the indexer, logs how many genes of each attribute were added, and stops as soon as every gene reaches the target count (**64** by default) or the resources run out. A hard cycle limit (50) guards against a stuck machine.
+
+The same routine is reused by the upgrade flow with per-attribute targets, so a bee upgrade can request exactly the genes it needs.
+
+![Gene production](screenshots/labos_gene.gif)
 
 ## Hive Map
 
@@ -106,6 +117,6 @@ The **Signalise** button starts an asynchronous relay cycle driven by `HeartOS/h
 
 This is how you match a cell on the map to a physical hive in the world.
 
-> Replace with a real capture saved as `docs/screenshots/hive_setup.png`.
+![Hive map screen](screenshots/hive_map.png)
 
-![Hive setup](https://placehold.co/800x450/1e1e1e/ffffff?text=Hive+Setup)
+![Hive setup](screenshots/hive_setup.png)

@@ -86,16 +86,16 @@ HeartOS запускается так же.
 
 ## Скриншоты
 
-> Ниже заглушки. Замени каждый URL реальным снимком, сохранённым как `docs/screenshots/<имя>.png` — см. [`screenshots/README.md`](screenshots/README.md).
+> Скриншоты реальной сборки.
 
 **Главное меню HeartOS** — стартовый экран центра управления с кнопками Configure / Library.
 
-![Главное меню HeartOS](https://placehold.co/800x450/1e1e1e/ffffff?text=HeartOS+Main+Menu)
+![Главное меню HeartOS](screenshots/heartos_main.png)
 
 **Карта ульев BeeOS** — список ульев с живыми цветами статуса.
 
-![Карта ульев BeeOS](https://placehold.co/800x450/1e1e1e/ffffff?text=BeeOS+Hive+Map)
+![Карта ульев BeeOS](screenshots/beeos_tech_mon_1.png)
 
 **Разведение LabOS** — экран лаборатории во время цикла разведения.
 
-![Разведение LabOS](https://placehold.co/800x450/1e1e1e/ffffff?text=LabOS+Breeding)
+![Разведение LabOS](screenshots/labos_breeding.png)

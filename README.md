@@ -12,7 +12,7 @@ One command. Installer asks for role (BeeOS / LabOS / HeartOS) and downloads eve
 
 A three-terminal ComputerCraft suite that automates bees, genetics and hives in All the Mods 10.
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![Platform](https://img.shields.io/badge/platform-CC%3ATweaked-green)
 ![Modpack](https://img.shields.io/badge/modpack-ATM10-orange)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -58,7 +58,7 @@ flowchart LR
 - **Just Dire Things** — breeding automation.
 - **Modular Routers** — item routing around the lab.
 - **Applied Energistics 2 (AE2)** — resource interface for supplying resources.
-- **SuperFactoryManager (SFM)** — automation for large apiaries.
+- **SuperFactoryManager (SFM)** or **Logistics Networks** — automation for large apiaries.
 - **Ender IO** — gene crafters.
 - **Item Collectors (or equivalent)** — drop collection and routing.
 
@@ -84,17 +84,21 @@ Details for all three systems are in [Systems Documentation](docs/systems.md).
 
 ## 📸 Screenshots
 
-> Placeholders below. See [Screenshots Guide](docs/screenshots/README.md) for what each image must show and how to replace the URLs with real captures.
+> Screenshots from the live setup.
 
-![HeartOS main menu](https://placehold.co/800x450/1e1e1e/ffffff?text=HeartOS+Main+Menu)
+![HeartOS main menu](docs/screenshots/heartos_main.png)
 
 *HeartOS control center — Configure BeeOS / LabOS / Hive and the gene Library.*
 
-![BeeOS hive map](https://placehold.co/800x450/1e1e1e/ffffff?text=BeeOS+Hive+Map)
+**BeeOS hive monitors** — the tech hive list and the compact info overview.
 
-*BeeOS tech monitor — the paginated hive list with live status.*
+![BeeOS tech monitor](docs/screenshots/beeos_tech_mon_1.png)
 
-![LabOS breeding](https://placehold.co/800x450/1e1e1e/ffffff?text=LabOS+Breeding)
+![BeeOS tech monitor — hive detail](docs/screenshots/beeos_tech_mon_2.png)
+
+![BeeOS info monitor](docs/screenshots/beeos_info_1.png)
+
+![LabOS breeding](docs/screenshots/labos_breeding.png)
 
 *LabOS breeding screen — cycle progress and the upgrade log.*
 

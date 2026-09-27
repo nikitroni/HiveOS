@@ -12,7 +12,7 @@ wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua
 
 Набор из трёх терминалов для ComputerCraft, автоматизирующий пчёл, генетику и ульи в All the Mods 10.
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![Platform](https://img.shields.io/badge/platform-CC%3ATweaked-green)
 ![Modpack](https://img.shields.io/badge/modpack-ATM10-orange)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -58,7 +58,7 @@ flowchart LR
 - **Just Dire Things** — автоматизация разведения.
 - **Modular Routers** — маршрутизация предметов вокруг лаборатории.
 - **Applied Energistics 2 (AE2)** — интерфейс для подачи ресурсов.
-- **SuperFactoryManager (SFM)** — автоматизация для больших пасек.
+- **SuperFactoryManager (SFM)** или **Logistics Networks** — автоматизация для больших пасек.
 - **Ender IO** — крафтеры для генов.
 - **Item Collectors (или аналог)** — сбор и маршрутизация дропа.
 
@@ -84,17 +84,21 @@ flowchart LR
 
 ## 📸 Скриншоты
 
-> Ниже заглушки. Инструкция по скриншотам — в [Гайде по скриншотам](docs/screenshots/README.ru.md).
+> Скриншоты реальной сборки.
 
-![Главное меню HeartOS](https://placehold.co/800x450/1e1e1e/ffffff?text=HeartOS+Main+Menu)
+![Главное меню HeartOS](docs/screenshots/heartos_main.png)
 
 *Центр управления HeartOS — Configure BeeOS / LabOS / Hive и библиотека генов.*
 
-![Карта ульев BeeOS](https://placehold.co/800x450/1e1e1e/ffffff?text=BeeOS+Hive+Map)
+**Мониторы ульев BeeOS** — технический список ульев и компактный info-обзор.
 
-*Технический монитор BeeOS — постраничный список ульев с живым статусом.*
+![Технический монитор BeeOS](docs/screenshots/beeos_tech_mon_1.png)
 
-![Разведение LabOS](https://placehold.co/800x450/1e1e1e/ffffff?text=LabOS+Breeding)
+![Технический монитор BeeOS — детальный экран](docs/screenshots/beeos_tech_mon_2.png)
+
+![Info-монитор BeeOS](docs/screenshots/beeos_info_1.png)
+
+![Разведение LabOS](docs/screenshots/labos_breeding.png)
 
 *Экран разведения LabOS — прогресс цикла и лог улучшений.*
 

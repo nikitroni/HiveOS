@@ -86,16 +86,16 @@ If a terminal keeps waiting, re-check that its config was pushed and that every 
 
 ## Screenshots
 
-> These are placeholders. Replace each URL with a real capture saved as `docs/screenshots/<name>.png` — see [`screenshots/README.md`](screenshots/README.md).
+> Screenshots from the live setup.
 
 **HeartOS main menu** — the control center landing screen with the Configure / Library buttons.
 
-![HeartOS main menu](https://placehold.co/800x450/1e1e1e/ffffff?text=HeartOS+Main+Menu)
+![HeartOS main menu](screenshots/heartos_main.png)
 
 **BeeOS hive map** — the hive list with live status colors.
 
-![BeeOS hive map](https://placehold.co/800x450/1e1e1e/ffffff?text=BeeOS+Hive+Map)
+![BeeOS hive map](screenshots/beeos_tech_mon_1.png)
 
 **LabOS breeding** — the lab screen during a breeding run.
 
-![LabOS breeding](https://placehold.co/800x450/1e1e1e/ffffff?text=LabOS+Breeding)
+![LabOS breeding](screenshots/labos_breeding.png)
