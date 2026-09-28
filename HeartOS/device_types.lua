@@ -190,6 +190,10 @@ return {
         key = "hive_block",
         label = "Hive Block",
         checkMethods = {"list", "getItemDetail", "pushItems", "pullItems"},
+        types = {
+            ["productivebees:advanced_hive"] = true,
+            ["productivebees:expansion_box"] = true,
+        },
         max = nil,
         group = "hives",
     },

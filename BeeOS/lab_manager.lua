@@ -5,6 +5,7 @@
 
 local Logger = require("logger")
 local ChatNotify = require("chat_notify")
+local RednetProtocol = require("rednet_protocol")
 -- Must be the same path (same require cache key) as in BeeOs.lua
 -- ("boot/boot_start"): otherwise a SECOND instance of the module loads with its own
 -- currentStatus, and busy here will not see the freeze protocol in BeeOs.
@@ -49,6 +50,10 @@ function LabManager.isLocked()
         return nil
     end
     local file = fs.open(lockFile, "r")
+    if not file then
+        lock = nil
+        return nil
+    end
     local lockedHive = file.readAll()
     file.close()
     lockedHive = tonumber(lockedHive) or lockedHive
@@ -59,6 +64,10 @@ end
 function LabManager.lock(hiveId)
     lock = hiveId
     local file = fs.open(lockFile, "w")
+    if not file then
+        Logger.log("LAB: cannot write lock file (no space?)")
+        return
+    end
     file.write(tostring(hiveId))
     file.close()
     Logger.log("LAB: Lock set for hive " .. hiveId)
@@ -74,6 +83,10 @@ function LabManager.unlock()
             Logger.log("LAB: Failed to delete lock file: " .. tostring(err))
             -- Overwrite with empty so it doesn't get in the way
             local file = fs.open(lockFile, "w")
+            if not file then
+                Logger.log("LAB: cannot overwrite lock file (no space?)")
+                return
+            end
             file.write("")
             file.close()
         end
@@ -432,14 +445,24 @@ local function runSendCycle()
             LabManager.lock(st.hiveId)
             Logger.log("LAB: Successfully sent " .. taken .. " bees from hive " .. st.hiveId)
             notifyChat(string.format("%d bees sent to lab from hive %s", taken, tostring(st.hiveId)))
-            rednet.broadcast({
+            local request = {
                 type = "lab_request",
                 hive_id = st.hiveId,
                 bee_count = taken,  -- actual number of bees sent
                 hive_block = st.hiveBlockName,
                 sender_id = os.getComputerID(),
-            })
-            Logger.log("LAB: Request broadcast to lab")
+            }
+            -- Prefer a directed send to the LabOS terminal (same lookup the
+            -- HeartOS config protocol uses); fall back to a broadcast when the
+            -- lab cannot be resolved. A one-shot broadcast was being missed by
+            -- the lab, so the source hive never reached it.
+            local pcOk, sentDirect = pcall(RednetProtocol.send, "labos", request)
+            if pcOk and sentDirect then
+                Logger.log("LAB: Request sent to labos directly")
+            else
+                rednet.broadcast(request)
+                Logger.log("LAB: Request broadcast to lab (labos not found)")
+            end
         else
             error("Only " .. taken .. " bees taken, expected " .. st.expected)
         end

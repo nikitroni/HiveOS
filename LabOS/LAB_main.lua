@@ -61,10 +61,46 @@ local LABOS_CONFIG_FILE = "labos_config.lua"
 -- ==================== LOG HELPER FUNCTIONS ====================
 local LOG_DIR = "_logs"
 local LOG_FILE = "_logs/lab_os.log"
+
+local MAX_LOG_SIZE = 50000
+local MIN_FREE_SPACE = 5000
+
+local logSpaceWarned = false
+
 local function ensureLabLogDir()
     if not fs.exists(LOG_DIR) then
         pcall(fs.makeDir, LOG_DIR)
     end
+end
+
+-- File size: fs.getSize, then fs.attributes().size, then a read fallback.
+local function getFileSize(path)
+    local ok, size = pcall(fs.getSize, path)
+    if ok and type(size) == "number" then return size end
+    local okAttr, attr = pcall(fs.attributes, path)
+    if okAttr and type(attr) == "table" and type(attr.size) == "number" then
+        return attr.size
+    end
+    local f = fs.open(path, "r")
+    if not f then return 0 end
+    local content = f.readAll()
+    f.close()
+    if type(content) == "string" then return #content end
+    return 0
+end
+
+-- One-time cleanup at startup: remove the log when it exceeds the cap.
+ensureLabLogDir()
+if getFileSize(LOG_FILE) > MAX_LOG_SIZE then
+    pcall(fs.delete, LOG_FILE)
+end
+
+local function warnLogSpace()
+    if logSpaceWarned then return end
+    logSpaceWarned = true
+    pcall(function()
+        Utils.sendChat("Low disk space, log write skipped", true)
+    end)
 end
 
 -- Writes both to the screen buffer (HUD) and to a file (for debugging)
@@ -74,15 +110,21 @@ local function addLogLine(line)
     end
     line = line:gsub("§.", "")
 
-    -- To the file (always, without loss)
-    ensureLabLogDir()
-    local f = fs.open(LOG_FILE, "a")
-    if f then
-        f.writeLine(os.date("%H:%M:%S") .. " " .. line)
-        f.close()
+    local okSpace, space = pcall(fs.getFreeSpace, "/")
+    if okSpace and type(space) == "number" and space < MIN_FREE_SPACE then
+        warnLogSpace()
+    else
+        logSpaceWarned = false
+        -- To the file (without loss)
+        ensureLabLogDir()
+        local f = fs.open(LOG_FILE, "a")
+        if f then
+            f.writeLine(os.date("%H:%M:%S") .. " " .. line)
+            f.close()
+        end
     end
 
-    -- To the HUD screen buffer
+    -- To the HUD screen buffer (always kept)
     table.insert(logBuffer, line)
     if #logBuffer > 9 then
         table.remove(logBuffer, 1)

@@ -73,6 +73,7 @@ local function scanOne(key, globalAllDevices, ui)
     key = base.key,
     label = base.label,
     checkMethods = base.checkMethods,
+    types = base.types,
     max = 1,
     group = base.group,
   }

@@ -72,6 +72,20 @@ local function matchesMethods(name, checkMethods)
     return true
 end
 
+--- Check the peripheral type against an optional whitelist (O(1) lookup).
+--- When `types` is absent the device always matches (backward compatible).
+local function matchesTypes(name, types)
+    if not types then return true end
+    local t = peripheral.getType(name)
+    return t ~= nil and types[t] == true
+end
+
+--- Full match: required methods plus the optional type whitelist.
+local function deviceMatches(name, deviceType)
+    return matchesMethods(name, deviceType.checkMethods)
+        and matchesTypes(name, deviceType.types)
+end
+
 --- Chat shortcuts
 local function chat(msg) ChatUtil.send(msg) end
 local function chatInfo(msg) ChatUtil.sendInfo(msg) end
@@ -211,7 +225,6 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
     local foundDevices = {}
     local maxCount = deviceType.max or 999
     local label = deviceType.label
-    local checkMethods = deviceType.checkMethods
 
     -- Optional monitor UI: Back cancels the whole scan (old callers pass no ui).
     local backBtn = ui and HudUtil.getFooter(ui.mon, 1, 1).back or nil
@@ -256,12 +269,12 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
 
                     if #added == 1 and #removed == 0 then
                         local name = added[1]
-                        if matchesMethods(name, checkMethods) then
+                        if deviceMatches(name, deviceType) then
                             detectedName = name
                             deviceFound = true
                             scanning = false
                         else
-                            chatError("Detected: " .. ChatUtil.device(name, ChatUtil.code("c")) .. " (does not match required methods)")
+                            chatError("Detected: " .. ChatUtil.device(name, ChatUtil.code("c")) .. " (does not match required methods/type)")
                             if not isInGlobalList(name, globalAllDevices) then
                                 table.insert(globalAllDevices, name)
                             end
@@ -272,7 +285,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                         local removedName = removed[1]
                         local addedName = added[1]
                         if removedName == addedName and isInGlobalList(addedName, globalAllDevices) then
-                            if matchesMethods(addedName, checkMethods) then
+                            if deviceMatches(addedName, deviceType) then
                                 detectedName = addedName
                                 deviceFound = true
                                 scanning = false
@@ -284,12 +297,12 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                     elseif #added > 1 then
                         local matched = {}
                         for _, name in ipairs(added) do
-                            if matchesMethods(name, checkMethods) then
+                            if deviceMatches(name, deviceType) then
                                 table.insert(matched, name)
                             end
                         end
                         if #matched == 0 then
-                            chatError("Detected: " .. deviceList(added) .. " (does not match required methods)")
+                            chatError("Detected: " .. deviceList(added) .. " (does not match required methods/type)")
                             chatInfo("Try a different device.")
                             for _, name in ipairs(added) do
                                 if not isInGlobalList(name, globalAllDevices) then

@@ -5,9 +5,30 @@
 
 local LogUtil = {}
 
+local MAX_LOG_SIZE = 50000
+local MIN_FREE_SPACE = 5000
+
+local spaceWarned = false
+
 --- Get full path to log file
 local function getLogPath()
     return "logs/error.log"
+end
+
+--- File size: fs.getSize, then fs.attributes().size, then a read fallback.
+local function getFileSize(path)
+    local ok, size = pcall(fs.getSize, path)
+    if ok and type(size) == "number" then return size end
+    local okAttr, attr = pcall(fs.attributes, path)
+    if okAttr and type(attr) == "table" and type(attr.size) == "number" then
+        return attr.size
+    end
+    local f = fs.open(path, "r")
+    if not f then return 0 end
+    local content = f.readAll()
+    f.close()
+    if type(content) == "string" then return #content end
+    return 0
 end
 
 --- Initialize: create logs/ folder if it doesn't exist
@@ -15,6 +36,11 @@ function LogUtil.init()
     if not fs.exists("logs") then
         fs.makeDir("logs")
     end
+end
+
+-- One-time cleanup at module start: remove the log when it exceeds the cap.
+if getFileSize(getLogPath()) > MAX_LOG_SIZE then
+    pcall(fs.delete, getLogPath())
 end
 
 --- Get current timestamp
@@ -43,10 +69,19 @@ function LogUtil.log(level, message, ...)
         end
     end
 
-    local f = io.open(getLogPath(), "a")
-    if f then
-        f:write(fullMessage .. "\n")
-        f:close()
+    local okSpace, space = pcall(fs.getFreeSpace, "/")
+    if okSpace and type(space) == "number" and space < MIN_FREE_SPACE then
+        if not spaceWarned then
+            spaceWarned = true
+            print("Low disk space, log write skipped")
+        end
+    else
+        spaceWarned = false
+        local f = io.open(getLogPath(), "a")
+        if f then
+            f:write(fullMessage .. "\n")
+            f:close()
+        end
     end
 
     print(fullMessage)
