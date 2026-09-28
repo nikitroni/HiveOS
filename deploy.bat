@@ -6,6 +6,8 @@ if not exist "0\" goto :nosrc
 if not exist "1\" goto :nosrc
 if not exist "2\" goto :nosrc
 
+set "COMMIT_MSG=%~1"
+
 echo [deploy] Purging mirrors (exact copy, no stale files)...
 if exist "BeeOS"   rmdir /s /q "BeeOS"
 if exist "LabOS"   rmdir /s /q "LabOS"
@@ -27,18 +29,22 @@ if not errorlevel 1 (
   goto :done
 )
 
-set "TMPF=%TEMP%\hiveos_deploy_files.txt"
-git diff --cached --name-only > "%TMPF%"
-set "ROLES="
-findstr /b /c:"BeeOS/"   "%TMPF%" >nul && set "ROLES=!ROLES! BeeOS"
-findstr /b /c:"LabOS/"   "%TMPF%" >nul && set "ROLES=!ROLES! LabOS"
-findstr /b /c:"HeartOS/" "%TMPF%" >nul && set "ROLES=!ROLES! HeartOS"
-del "%TMPF%" >nul 2>&1
+if "!COMMIT_MSG!"=="" (
+  set "TMPF=%TEMP%\hiveos_deploy_files.txt"
+  git diff --cached --name-only > "%TMPF%"
+  set "ROLES="
+  findstr /b /c:"BeeOS/"   "%TMPF%" >nul && set "ROLES=!ROLES! BeeOS"
+  findstr /b /c:"LabOS/"   "%TMPF%" >nul && set "ROLES=!ROLES! LabOS"
+  findstr /b /c:"HeartOS/" "%TMPF%" >nul && set "ROLES=!ROLES! HeartOS"
+  del "%TMPF%" >nul 2>&1
 
-set "STAT="
-for /f "delims=" %%S in ('git diff --cached --stat') do set "STAT=%%S"
+  set "STAT="
+  for /f "delims=" %%S in ('git diff --cached --stat') do set "STAT=%%S"
 
-git commit -m "deploy: sync!ROLES! - !STAT!"
+  set "COMMIT_MSG=deploy: sync!ROLES! - !STAT!"
+)
+
+git commit -m "!COMMIT_MSG!"
 if errorlevel 1 goto :fail
 git push
 if errorlevel 1 goto :fail
