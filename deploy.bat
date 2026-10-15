@@ -25,8 +25,8 @@ if errorlevel 1 goto :fail
 
 git diff --cached --quiet
 if not errorlevel 1 (
-  echo [deploy] Nothing staged. Nothing to commit.
-  goto :done
+  echo [deploy] Nothing staged. Skipping commit.
+  goto :push
 )
 
 if "!COMMIT_MSG!"=="" (
@@ -46,6 +46,9 @@ if "!COMMIT_MSG!"=="" (
 
 git commit -m "!COMMIT_MSG!"
 if errorlevel 1 goto :fail
+
+:push
+echo [deploy] Pushing to origin...
 git push
 if errorlevel 1 goto :fail
 echo [deploy] Done.
