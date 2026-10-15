@@ -72,38 +72,70 @@ local function getGroupColor(index)
     return colors[((index - 1) % #colors) + 1]
 end
 
---- View config with paginated monitor display
+--- View config with paginated monitor display.
+--- A missing/incomplete config shows a required-blocks checklist instead of
+--- a red "NOT FOUND" error.
 local function viewLabOSConfig(mon, heartConfig)
-    local config, err = ConfigManager.loadFromFile(CONFIG_FILE)
+    local config = ConfigManager.loadFromFile(CONFIG_FILE)
 
-    if not config then
-        local w, h = mon.getSize()
-        MonitorUtil.clearScreen(mon)
-        HudUtil.drawBackground(mon, "create_edit")
-        MonitorUtil.drawTitle(mon, "===   View LabOS Config  ===", 2)
-        MonitorUtil.drawText(mon, 2, 4, "LabOS config: NOT FOUND", COLORS.error)
-        MonitorUtil.drawText(mon, 2, 5, tostring(err), COLORS.error)
-        MonitorUtil.drawText(mon, 2, h - 1, "Tap to return...", COLORS.darkGray)
-        pcall(os.pullEvent, "monitor_touch")
-        return
-    end
-
-    -- Build ordered items list matching device_types order
-    local items = {}
-    local idx = 0
+    local deviceTypes = {}
     for _, dt in ipairs(DeviceTypes) do
         if dt.group == "labos" then
-            idx = idx + 1
-            local value = (config.peripherals or {})[dt.key]
-            table.insert(items, {
-                key = dt.key,
-                value = value,
-                color = getGroupColor(idx),
-            })
+            table.insert(deviceTypes, dt)
         end
     end
 
-    MonitorUtil.paginatedView(mon, "===   View LabOS Config  ===", items, heartConfig.main_monitor, nil, nil, "labos")
+    local peripherals = (config and config.peripherals) or {}
+    local entries = {}
+    local filledCount = 0
+    local allFilled = config ~= nil
+    for _, dt in ipairs(deviceTypes) do
+        local value = peripherals[dt.key]
+        local filled = value ~= nil and value ~= ""
+            and not (type(value) == "table" and #value == 0)
+        if filled then
+            filledCount = filledCount + 1
+        else
+            allFilled = false
+        end
+        table.insert(entries, { label = dt.label, filled = filled })
+    end
+
+    -- Fully configured: show the normal paginated view.
+    if allFilled and #deviceTypes > 0 then
+        local items = {}
+        for idx, dt in ipairs(deviceTypes) do
+            table.insert(items, {
+                key = dt.key,
+                value = peripherals[dt.key],
+                color = getGroupColor(idx),
+            })
+        end
+        MonitorUtil.paginatedView(mon, "===   View LabOS Config  ===", items, heartConfig.main_monitor, nil, nil, "labos")
+        return
+    end
+
+    local header, headerColor
+    if config == nil then
+        header = "Config not created yet. Required blocks:"
+        headerColor = colors.yellow
+    elseif filledCount == #deviceTypes then
+        header = "Config complete"
+        headerColor = colors.green
+    else
+        header = "Config incomplete. Required blocks:"
+        headerColor = colors.yellow
+    end
+
+    MonitorUtil.drawConfigChecklist(
+        mon,
+        "===   View LabOS Config  ===",
+        header,
+        headerColor,
+        entries,
+        heartConfig.main_monitor,
+        "labos"
+    )
 end
 
 --- Edit: select groups to replace via editByKeys
@@ -188,7 +220,7 @@ local function createLabOSConfig(mon, heartConfig)
         heartConfig.main_monitor,
         "LabOS (Create)",
         function(devices)
-            local config = ConfigManager.createConfig(devices)
+            local config = ConfigManager.createConfig(devices, deviceTypes)
             ConfigManager.saveConfig(config, CONFIG_FILE)
             ChatUtil.sendSuccess("LabOS config saved!")
             trySendConfig(mon, heartConfig, 10, protocol, frozen)

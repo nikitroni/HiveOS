@@ -94,13 +94,13 @@ local function runScreens(beeCfg)
     techNames = techNames or {}
     infoNames = infoNames or {}
 
-    local techMon = nil
+    local techMons = {}
     for _, name in ipairs(techNames) do
         --- @type table
         local mon = peripheral.wrap(name)
-        if mon then techMon = mon break end
+        if mon then techMons[#techMons + 1] = mon end
     end
-    if not techMon then
+    if #techMons == 0 then
         Logger.log("BeeOS: Tech monitor not found")
         return nil
     end
@@ -132,7 +132,7 @@ local function runScreens(beeCfg)
     -- info+send+read are infinite loops, terminated by parallel when tech exits.
     local techResult = nil
     local parOk, parErr = pcall(parallel.waitForAny,
-        function() techResult = tech_screen.run(techMon, techOpts); return techResult end,
+        function() techResult = tech_screen.run(techMons, techOpts); return techResult end,
         function() runInfo(infoMons) end,
         LabManager.sendWorker,
         HiveReader.worker

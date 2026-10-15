@@ -13,19 +13,14 @@ local LOOKUP_INTERVAL = 1
 local openSide = nil
 
 -- Open the modem (side only, no channel) if it is not open yet.
+-- Tries every side so it works regardless of where the modem is attached.
 local function ensureOpen()
   if openSide and rednet.isOpen(openSide) then
     return true
   end
 
-  local candidates = {}
-  local modem = peripheral.find("modem")
-  if type(modem) == "string" then
-    candidates[#candidates + 1] = modem
-  end
-  candidates[#candidates + 1] = "back"
-
-  for _, side in ipairs(candidates) do
+  local sides = { "back", "top", "bottom", "left", "right", "front" }
+  for _, side in ipairs(sides) do
     if peripheral.getType(side) == "modem" then
       local ok = pcall(rednet.open, side)
       if ok then

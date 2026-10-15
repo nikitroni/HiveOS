@@ -29,6 +29,25 @@ local BG_DETAIL_DARK = colors.black
 local BG_DETAIL_GREY = colors.gray
 local BG_SYMBOL_LIGHT = colors.lightGray
 
+-- Draw a HUD background image onto a specific monitor.
+-- paintutils.drawImage(image, x, y) has no target parameter in CC:Tweaked -
+-- it draws on term.current(). Redirecting term to the target monitor first
+-- makes the HUD land on that monitor (same approach as the info screen
+-- buffer). Otherwise every call repaints whichever monitor the terminal is
+-- redirected to (the first tech monitor), leaving the others without a HUD.
+local function drawHudBg(mon, path)
+    local oldTerm = term.current()
+    term.redirect(mon)
+    local bg = paintutils.loadImage(path)
+    if bg then
+        paintutils.drawImage(bg, 1, 1, mon)
+    else
+        mon.setBackgroundColor(colors.black)
+        mon.clear()
+    end
+    term.redirect(oldTerm)
+end
+
 -- ====================== LIST DRAWING ======================
 
 local function drawListCell(mon, hive, baseX, baseY)
@@ -85,13 +104,7 @@ local function drawList(mon)
     if currentPage > totalPages then currentPage = totalPages end
     if currentPage < 1 then currentPage = 1 end
 
-    local bg = paintutils.loadImage("tech/HUD_tech_1.nfp")
-    if bg then
-        paintutils.drawImage(bg, 1, 1, mon)
-    else
-        mon.setBackgroundColor(colors.black)
-        mon.clear()
-    end
+    drawHudBg(mon, "tech/HUD_tech_1.nfp")
 
     local grid = configList.grid
     local startIdx = (currentPage - 1) * grid.hives_per_page + 1
@@ -142,13 +155,7 @@ local function drawDetail(mon, hive)
     local grid = cfg.grid
     local totalHives = HiveReader.count()
 
-    local bg = paintutils.loadImage("tech/HUD_tech_2.nfp")
-    if bg then
-        paintutils.drawImage(bg, 1, 1, mon)
-    else
-        mon.setBackgroundColor(colors.black)
-        mon.clear()
-    end
+    drawHudBg(mon, "tech/HUD_tech_2.nfp")
 
     -- Decorative honeycombs (on gray background)
     if cfg.honeycomb then
@@ -349,7 +356,7 @@ end
 
 -- ====================== CLICK HANDLING ======================
 
-local function handleClick(mon, x, y)
+local function handleClick(x, y, redraw)
     if mode == "list" then
         local grid = configList.grid
         local hives = HiveReader.getHives()
@@ -363,7 +370,7 @@ local function handleClick(mon, x, y)
             and y >= s.next_button.y1 and y <= s.next_button.y2 then
             if currentPage < totalPages then
                 currentPage = currentPage + 1
-                drawList(mon)
+                redraw()
             end
             return
         end
@@ -371,7 +378,7 @@ local function handleClick(mon, x, y)
             and y >= s.back_button.y1 and y <= s.back_button.y2 then
             if currentPage > 1 then
                 currentPage = currentPage - 1
-                drawList(mon)
+                redraw()
             end
             return
         end
@@ -389,7 +396,7 @@ local function handleClick(mon, x, y)
                 if x >= cellX1 and x <= cellX2 and y >= cellY1 and y <= cellY2 then
                     selectedHiveIndex = hiveIdx
                     mode = "detail"
-                    drawDetail(mon, hives[hiveIdx])
+                    redraw()
                     return
                 end
             end
@@ -419,16 +426,16 @@ local function handleClick(mon, x, y)
         elseif x >= s.back_button.x1 and x <= s.back_button.x2 and y >= s.back_button.y1 and y <= s.back_button.y2 then
             if selectedHiveIndex > 1 then
                 selectedHiveIndex = selectedHiveIndex - 1
-                drawDetail(mon, HiveReader.getHives()[selectedHiveIndex])
+                redraw()
             end
         elseif x >= s.next_button.x1 and x <= s.next_button.x2 and y >= s.next_button.y1 and y <= s.next_button.y2 then
             if selectedHiveIndex < HiveReader.count() then
                 selectedHiveIndex = selectedHiveIndex + 1
-                drawDetail(mon, HiveReader.getHives()[selectedHiveIndex])
+                redraw()
             end
         elseif x >= s.page_button.x1 and x <= s.page_button.x2 and y >= s.page_button.y1 and y <= s.page_button.y2 then
             mode = "list"
-            drawList(mon)
+            redraw()
         end
     end
 end
@@ -437,7 +444,7 @@ end
 
 -- One tick (heartbeat + data + watchdog only, WITHOUT info/sendTick)
 local dataBusy = false
-local function processTick(mon, opts, now)
+local function processTick(opts, now)
     timerTicks = (timerTicks or 0) + 1
     if timerTicks % 10 == 0 then
         Logger.log("TECH heartbeat tick " .. timerTicks)
@@ -453,10 +460,20 @@ local function processTick(mon, opts, now)
     end
 end
 
-local function run(mon, opts)
+local function run(mons, opts)
     opts = opts or {}
     sharedOpts = opts
     LabManager.reset()
+
+    -- Accept a single monitor for backwards compatibility.
+    if type(mons) == "table" and mons.setCursorPos then mons = { mons } end
+    mons = mons or {}
+    local firstMon = mons[1]
+    if not firstMon then
+        Logger.log("TECH: no tech monitors to draw on")
+        sharedOpts = nil
+        return nil
+    end
 
     -- Reset module state: after freeze/reload the module is not
     -- reloaded (require is cached), so dataBusy could get stuck
@@ -464,9 +481,17 @@ local function run(mon, opts)
     dataBusy = false
     lastUpdateTime = os.clock()
 
-    local oldTerm = term.redirect(mon)
-    mon.setTextScale(1.0)
-    Logger.log("TECH: run started, term->" .. tostring(peripheral.getName(mon)))
+    local oldTerm = term.redirect(firstMon)
+    firstMon.setTextScale(1.0)
+    Logger.log("TECH: run started, term->" .. tostring(peripheral.getName(firstMon)))
+
+    -- Names of all tech monitors: touch events from any of them are handled.
+    local monNames = {}
+    for _, m in ipairs(mons) do
+        m.setTextScale(1.0)
+        local n = peripheral.getName(m)
+        if n then monNames[n] = true end
+    end
 
     local function exitRun(res)
         term.redirect(oldTerm)
@@ -478,9 +503,12 @@ local function run(mon, opts)
     -- return inside pcall exits only the anonymous function, not run.
     local exitAction = nil
 
+    -- Redraw the current page on EVERY tech monitor.
     local function redrawCurrent()
-        if mode == "list" then drawList(mon)
-        else drawDetail(mon, HiveReader.getHives()[selectedHiveIndex]) end
+        for _, mon in ipairs(mons) do
+            if mode == "list" then drawList(mon)
+            else drawDetail(mon, HiveReader.getHives()[selectedHiveIndex]) end
+        end
     end
 
     if mode == "detail" and (selectedHiveIndex < 1 or selectedHiveIndex > HiveReader.count()) then
@@ -504,18 +532,18 @@ local function run(mon, opts)
             if event == "timer" and p1 == tickTimer then
                 if now - lastTickTime >= 0.1 then
                     lastTickTime = now
-                    local okT = pcall(processTick, mon, opts, now)
+                    local okT = pcall(processTick, opts, now)
                     if not okT then Logger.log("TECH: processTick error") end
                 end
                 -- Restart the timer OUTSIDE the lastTickTime check: otherwise an early
                 -- timer will not be restarted and the tick loop will die.
                 tickTimer = os.startTimer(0.1)
 
-            elseif event == "monitor_touch" and p1 == peripheral.getName(mon) then
+            elseif event == "monitor_touch" and monNames[p1] then
                 now = os.clock()
                 if not lastTouchTime or now - lastTouchTime >= 0.3 then
                     lastTouchTime = now
-                    pcall(handleClick, mon, p2, p3)
+                    pcall(handleClick, p2, p3, redrawCurrent)
                 end
 
             elseif event == "rednet_message" then

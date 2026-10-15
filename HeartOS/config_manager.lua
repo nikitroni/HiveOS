@@ -134,12 +134,25 @@ end
 --- Create a config from a config_wizard result.
 --- Input format (from ConfigWizard): { tech_monitor = "name", info_monitors = {"name1", ...}, ... }
 --- The keys already match device_types.lua, we group them into the `peripherals` table.
+--- When deviceTypes is given, the config is seeded with EVERY key of the group
+--- (empty string) so a freshly created config is a complete template.
 --- @param devices table
+--- @param deviceTypes table|nil device_types.lua entries of the target group
 --- @return table
-function ConfigManager.createConfig(devices)
-    -- Peripherals from the wizard. All keys are from device_types.lua.
+function ConfigManager.createConfig(devices, deviceTypes)
+    local peripherals = {}
+    if deviceTypes then
+        for _, dt in ipairs(deviceTypes) do
+            peripherals[dt.key] = ""
+        end
+    end
+    if devices then
+        for k, v in pairs(devices) do
+            peripherals[k] = v
+        end
+    end
     local config = {
-        peripherals = devices,
+        peripherals = peripherals,
     }
     return config
 end

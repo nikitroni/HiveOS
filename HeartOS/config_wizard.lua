@@ -1198,7 +1198,6 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     chatSeparator()
     chatHighlight("=== " .. configLabel .. " edit complete ===")
     chatInfo("Check the summary on the monitor.")
-    chatQuestion("Save changes? (Y/N)")
 
     local confirmed = ConfigWizard.waitYesNoNav(
         mon, monSide,

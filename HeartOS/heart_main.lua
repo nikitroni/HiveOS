@@ -8,19 +8,41 @@ local RednetProtocol = require("rednet_protocol")
 
 -- ==================== MONITOR CONNECTION ====================
 
-local function getMainMonitor()
-    local side = heartConfig.main_monitor
-    --- @type table
-    local mon = peripheral.wrap(side)
-    if not mon then
-        if not ChatUtil.isAvailable() then
-            ChatUtil.init(nil)
+local SIDES = { "back", "top", "bottom", "left", "right", "front" }
+
+--- Find the main monitor regardless of the side it is attached to.
+--- @return table|nil, string|nil wrapped peripheral and its name/side
+local function findMonitor()
+    local mon = peripheral.find("monitor")
+    if mon then
+        local name = peripheral.getName(mon)
+        if name then
+            return mon, name
         end
-        ChatUtil.sendError("HeartOS: Monitor not found on side '" .. side .. "'.\n" ..
-              "Please check heart_config.lua and connect a monitor.")
-        error("HeartOS: Monitor not found on side '" .. side .. "'.\n" ..
-              "Please check heart_config.lua and connect a monitor.")
     end
+    for _, side in ipairs(SIDES) do
+        if peripheral.getType(side) == "monitor" then
+            local wrapped = peripheral.wrap(side)
+            if wrapped then
+                return wrapped, side
+            end
+        end
+    end
+    return nil, nil
+end
+
+--- Auto-detect the monitor, waiting for the user to connect one if needed.
+local function getMainMonitor()
+    local mon, side = findMonitor()
+    while not mon do
+        term.clear()
+        term.setCursorPos(1, 1)
+        print("No monitor found. Connect a monitor to any side and press any key to retry.")
+        os.pullEvent("key")
+        mon, side = findMonitor()
+    end
+    -- Publish the detected side so every screen can filter monitor_touch events.
+    heartConfig.main_monitor = side
     return mon
 end
 

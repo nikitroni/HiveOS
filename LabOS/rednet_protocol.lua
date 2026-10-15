@@ -18,14 +18,8 @@ local function ensureOpen()
     return true
   end
 
-  local candidates = {}
-  local modem = peripheral.find("modem")
-  if type(modem) == "string" then
-    candidates[#candidates + 1] = modem
-  end
-  candidates[#candidates + 1] = "back"
-
-  for _, side in ipairs(candidates) do
+  local sides = { "back", "top", "bottom", "left", "right", "front" }
+  for _, side in ipairs(sides) do
     if peripheral.getType(side) == "modem" then
       local ok = pcall(rednet.open, side)
       if ok then

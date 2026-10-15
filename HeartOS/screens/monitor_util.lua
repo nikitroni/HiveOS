@@ -514,6 +514,50 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
     end
 end
 
+--- Show a checklist of required config blocks when the config is missing or
+--- incomplete. A block is marked [x] when its config value is filled.
+--- @param mon table monitor
+--- @param title string centered screen title
+--- @param header string status line
+--- @param headerColor number
+--- @param entries table array of { label = string, filled = boolean }
+--- @param side string|nil monitor side to accept touches from
+--- @param screenId string|nil hud screen id for background/title
+function MonitorUtil.drawConfigChecklist(mon, title, header, headerColor, entries, side, screenId)
+    local _, h = mon.getSize()
+    MonitorUtil.clearScreen(mon)
+
+    local listX, listY, listBg = 4, 4, nil
+    if screenId then
+        local HudUtil = require("screens/hud_util")
+        HudUtil.drawBackground(mon, screenId)
+        HudUtil.createEditTitle(mon, title)
+        local area = HudUtil.getArea(mon)
+        listX, listY, listBg = area.x, area.y, area.bgColor
+    else
+        MonitorUtil.drawTitle(mon, title, 2)
+    end
+
+    MonitorUtil.drawText(mon, listX, listY, header, headerColor, listBg)
+    local y = listY + 1
+    for _, entry in ipairs(entries) do
+        if entry.filled then
+            MonitorUtil.drawText(mon, listX, y, "[x] " .. entry.label, colors.green, listBg)
+        else
+            MonitorUtil.drawText(mon, listX, y, "[ ] " .. entry.label, colors.white, listBg)
+        end
+        y = y + 1
+    end
+    MonitorUtil.drawText(mon, listX, h - 1, "Tap to return...", COLORS.darkGray, listBg)
+
+    -- Wait for a touch on the target monitor, then return to the menu.
+    while true do
+        local ok, _, touchedSide = pcall(os.pullEvent, "monitor_touch")
+        if not ok then return end
+        if side == nil or touchedSide == side then return end
+    end
+end
+
 -- ==================== DIALOGS ====================
 -- Confirmations are handled through chat answers (waitForYesNo), not via
 -- monitor buttons. No on-monitor yes/no dialog is provided.
