@@ -4,13 +4,13 @@
 wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua
 ```
 
-One command. Installer asks for role (BeeOS / LabOS / HeartOS) and downloads everything.
+One command. The installer asks for a role (BeeOS / LabOS / HeartOS / PocketOS) and a branch (`main` or `upgrade`; Enter selects `main`). Choose `upgrade` only after that branch has been published.
 
 ![](docs/logo.png)
 
 # HiveOS
 
-A three-terminal ComputerCraft suite that automates bees, genetics and hives in All the Mods 10.
+A ComputerCraft suite with three fixed terminals and a PocketOS controller for bees, genetics and hives in All the Mods 10.
 
 ![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![Platform](https://img.shields.io/badge/platform-CC%3ATweaked-green)
@@ -29,6 +29,10 @@ Every terminal communicates over rednet with a small request/reply protocol, so 
 
 HiveOS is intentionally split into three roles. **HeartOS** is the control center: it owns the device registry (`device_types.lua`), validates and stores the config files, and talks to the other terminals. **BeeOS** owns the hive screens and the async reader that inspects every hive. **LabOS** owns the breeding and genetics pipeline plus four button monitors.
 
+**PocketOS** runs on an Advanced Wireless Pocket Computer. It joins HeartOS over rednet, displays setup instructions, and sends wizard answers. HeartOS still scans nearby peripherals and saves the configurations. Pair the pocket computer with the code shown on the HeartOS monitor before using the wizard.
+
+After pairing, choose `1–6` on PocketOS to create or edit BeeOS, LabOS, or the hive map. The pocket screen shows instructions and accepts replies. An unambiguous device is added automatically, and the completed configuration is confirmed once before saving. Notifications appear on PocketOS while it is online and fall back to the owner's private chat when it is offline. To pair a different pocket computer, stop HeartOS and run `heart_main --pair`.
+
 Configuration changes follow the same pattern for BeeOS and LabOS. HeartOS first asks the terminal whether it is free (`busy?` / `status`); if the terminal is busy running a job it answers `wait` and the edit is refused. Otherwise HeartOS sends `freeze`, the terminal shows its wait screen, HeartOS pushes `update_config`, and finally sends `unfreeze`. Each step expects an explicit acknowledgement (`frozen`, `config_updated`, `running`).
 
 To keep the user interface responsive, long-running work never touches the render loop. BeeOS reads hives through an asynchronous worker (`HiveReader`) that survives a hanging `getBlockData`, while LabOS runs breeding, gene production and upgrades in a separate task worker. Results are delivered as rednet events, so a stuck peripheral never freezes the screen.
@@ -40,6 +44,7 @@ flowchart LR
     HeartOS["HeartOS\nControl center\nrednet heartos/main"]
     BeeOS["BeeOS\nHive monitors\nrednet beeos/main"]
     LabOS["LabOS\nLab monitors\nrednet labos/main"]
+    PocketOS["PocketOS\nMobile wizard\nwireless rednet"]
 
     HeartOS -->|"busy? / freeze / update_config / unfreeze"| BeeOS
     HeartOS -->|"busy? / freeze / update_config / unfreeze"| LabOS
@@ -47,6 +52,7 @@ flowchart LR
     LabOS -->|"lab_complete\n(bees returned)"| BeeOS
     BeeOS -.->|"status: free / busy"| HeartOS
     LabOS -.->|"status: free / busy"| HeartOS
+    PocketOS <-->|"prompts / replies"| HeartOS
 ```
 
 ## 📦 Requirements
@@ -62,15 +68,15 @@ flowchart LR
 - **Ender IO** — gene crafters.
 - **Item Collectors (or equivalent)** — drop collection and routing.
 
-Each terminal needs a **Wired Modem + Networking Cable connected to each terminal** (advanced computer recommended). The mod list may grow as the project is adapted to new packs.
+The three fixed terminals need **Wired Modems + Networking Cable** (advanced computers recommended). HeartOS also needs a **wireless or Ender Modem** to reach PocketOS. Equip the Advanced Wireless Pocket Computer with a modem upgrade. Use Ender Modems on both ends if you need unlimited range or communication across dimensions; regular wireless modems have limited range. The mod list may grow as the project is adapted to new packs.
 
 ## 🚀 Installation
 
 1. Craft and place **three computers** with their monitors: one for HeartOS, one for BeeOS, one for LabOS.
-2. Connect a **Wired Modem + Networking Cable** to each terminal and place the monitors where you want them.
+2. Connect a **Wired Modem + Networking Cable** to each fixed terminal. Add a wireless or Ender Modem to HeartOS and equip the pocket computer with a matching wireless or Ender Modem.
 3. On each computer run `wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua`.
-4. Pick the **role** when the installer asks (BeeOS / LabOS / HeartOS) and let it download the files.
-5. Run `reboot` on BeeOS and LabOS, then start the **wizard on HeartOS** to scan and configure the devices.
+4. Pick a **role** (BeeOS / LabOS / HeartOS / PocketOS) and branch. Use the same branch on all four computers. The installer offers `main` by default; choose `upgrade` when testing a published upgrade branch.
+5. Reboot BeeOS, LabOS, and HeartOS. Start PocketOS, enter the pairing code shown on the HeartOS monitor, then follow its setup prompts. HeartOS scans devices; PocketOS provides the controls and answers.
 
 Full step-by-step instructions, including cable and monitor placement, are in [Setup Guide](docs/setup.md).
 
