@@ -41,9 +41,19 @@ local function createAdapter(role, version, outcome)
       getNames = function() return state.available and { "chat_box_0" } or {} end,
       getMethods = function() return { "sendMessage" } end,
     },
+    rednet = { lookup = function() return nil end },
     require = function(name)
       if name == "lab_lib" then return lib end
       if name == "log_util" then return { warn = function() end } end
+      if name == "pocket_bridge" then
+        return {
+          send = function() return false end,
+          prompt = function() return false end,
+          isOnline = function() return false end,
+          getPocketId = function() return nil end,
+          takeReply = function() return nil end,
+        }
+      end
       error("Unexpected dependency: " .. tostring(name))
     end,
     os = { sleep = function() end },

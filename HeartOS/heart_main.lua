@@ -5,6 +5,7 @@
 local heartConfig = require("heart_config")
 local ChatUtil = require("chat_util")
 local RednetProtocol = require("rednet_protocol")
+local PocketBridge = require("pocket_bridge")
 
 local args = { ... }
 local owner = settings.get("hiveos.owner")
@@ -27,6 +28,11 @@ if args[1] == "--owner" or type(owner) ~= "string" or owner == "" then
   end
 end
 ChatUtil.setOwner(owner)
+ChatUtil.init(nil)
+PocketBridge.setFallback(ChatUtil.sendPrivateOnly)
+if args[1] == "--pair" and not PocketBridge.resetPairing() then
+  error("Cannot reset PocketOS pairing")
+end
 
 -- ==================== MONITOR CONNECTION ====================
 
@@ -73,13 +79,11 @@ local mainMon = getMainMonitor()
 -- ==================== REDNET ====================
 
 local function setupRednet()
-    local modem = peripheral.find("modem")
-    if modem then
-        local modemSide = type(modem) == "string" and modem or "back"
-        if not rednet.isOpen(modemSide) then
-            pcall(rednet.open, modemSide)
-        end
+  for _, name in ipairs(peripheral.getNames()) do
+    if peripheral.getType(name) == "modem" and not rednet.isOpen(name) then
+      pcall(rednet.open, name)
     end
+  end
 end
 
 setupRednet()
@@ -115,4 +119,7 @@ local textScale = (heartConfig.hud and heartConfig.hud.text_scale) or 1
 mainMon.setTextScale(textScale)
 
 local MainMenu = require("screens/main_menu")
-MainMenu.show(mainMon, heartConfig)
+parallel.waitForAny(
+  function() MainMenu.show(mainMon, heartConfig) end,
+  PocketBridge.run
+)

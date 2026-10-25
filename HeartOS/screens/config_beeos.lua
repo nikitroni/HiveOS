@@ -56,6 +56,10 @@ end
 --- will not open. With a free terminal - freeze succeeds.
 --- Returns protocol, ok.
 local function freezeForEdit(heartConfig)
+    if not ChatUtil.isPocketReady() then
+        ChatUtil.sendError("Open and pair PocketOS before starting the wizard.")
+        return nil, false
+    end
     local protocol = ConfigManager.PROTOCOL.beeos
 
     local ok, err = ConfigManager.freezeTerminal(protocol)
@@ -281,6 +285,14 @@ function ConfigBeeOS.run(mon, heartConfig)
                 end
             end
         end
+    end
+end
+
+function ConfigBeeOS.runPocket(mon, heartConfig, action)
+    if action == "create" then
+        createBeeOSConfig(mon, heartConfig)
+    elseif action == "edit" then
+        editBeeOSConfig(mon, heartConfig)
     end
 end
 

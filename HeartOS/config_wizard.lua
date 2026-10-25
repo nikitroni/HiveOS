@@ -1,6 +1,5 @@
 -- config_wizard.lua
--- Universal config creation/editing wizard via chat.
--- Monitor only shows summary; all interaction goes through in-game chat.
+-- Universal config creation/editing wizard driven by PocketOS prompts.
 
 local MonitorUtil = require("screens/monitor_util")
 local HudUtil = require("screens/hud_util")
@@ -147,11 +146,13 @@ function ConfigWizard.waitYesNoMonitor(mon, monSide, timeout)
             if MonitorUtil.getPressedButton({backBtn}, rawEvent[3], rawEvent[4]) then
                 return "cancel"
             end
-        elseif event == "chat_signed" or event == "chat" then
+        elseif event == "chat_signed" or event == "chat" or event == "rednet_message" then
             local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
             local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
             if not rawMsg then
                 -- Ignore replies from other players and chat box echoes.
+            elseif msg:lower() == "cancel" then
+                return "cancel"
             else
                 local lower = string.lower(msg)
                 if lower == "y" or lower == "yes" then
@@ -186,11 +187,13 @@ local function waitAnyMessageMonitor(mon, monSide, timeout)
             if MonitorUtil.getPressedButton({backBtn}, rawEvent[3], rawEvent[4]) then
                 return "cancel"
             end
-        elseif event == "chat_signed" or event == "chat" then
+        elseif event == "chat_signed" or event == "chat" or event == "rednet_message" then
             local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
             local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
             if not rawMsg then
                 -- Ignore replies from other players and chat box echoes.
+            elseif msg:lower() == "cancel" then
+                return "cancel"
             elseif msg ~= "" then
                 return msg
             end
@@ -227,17 +230,15 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
     local adding = true
     local skipRequestedThisType = false
     local matchedCandidates = nil
-    local skipFinalConfirm = false
     local stepAborted = false
     while adding and not skipRequestedThisType and not cancelled and not stepAborted do
         local deviceFound = false
         local detectedName = nil
         matchedCandidates = nil
-        skipFinalConfirm = false
 
-        while not deviceFound and not skipRequestedThisType and not cancelled do
+        while adding and not deviceFound and not skipRequestedThisType and not cancelled do
             chatSeparator()
-            chatStep("Connect device " .. ChatUtil.device(label) .. " (new/reconnect/skip)")
+            chatQuestion("Connect " .. ChatUtil.device(label) .. ", or type done/skip to continue.")
 
             local prevList = getPeripheralList()
 
@@ -318,14 +319,23 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                         scanTimerId = os.startTimer(0.5)
                     end
 
-                elseif event == "chat_signed" or event == "chat" then
+                elseif event == "chat_signed" or event == "chat" or event == "rednet_message" then
                     local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                     local msg = rawMsg or ""
                     if msg ~= "" then
                         local isEcho = (event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player))
-                        if not isEcho and string.lower(msg) == "skip" then
-                            chatHighlight("Skipping device type: " .. ChatUtil.device(label))
-                            skipRequestedThisType = true
+                        local command = string.lower(msg)
+                        if not isEcho and command == "cancel" then
+                            cancelled = true
+                            scanning = false
+                        elseif not isEcho and (command == "skip" or command == "done") then
+                            if #foundDevices > 0 then
+                                adding = false
+                                chatHighlight("Finished device type: " .. ChatUtil.device(label))
+                            else
+                                skipRequestedThisType = true
+                                chatHighlight("Skipping device type: " .. ChatUtil.device(label))
+                            end
                             scanning = false
                         end
                     end
@@ -344,26 +354,29 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                     selected = matchedCandidates[1]
                 else
                     table.sort(matchedCandidates)
-                    for _, name in ipairs(matchedCandidates) do
-                        chatSeparator()
-                        chatQuestion("Is this the required device? " .. ChatUtil.device(name) .. " (Y/N)")
-                        local ans
-                        if ui then
-                            ans = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 30)
+                    local choices = {}
+                    for index, name in ipairs(matchedCandidates) do
+                        choices[#choices + 1] = tostring(index) .. ". " .. name
+                    end
+                    chatQuestion("Choose " .. label .. ": " .. table.concat(choices, " | "))
+                    local answer
+                    if ui then
+                        answer = waitAnyMessageMonitor(ui.mon, ui.monSide, 60)
+                    else
+                        answer = ChatUtil.waitForAnyMessage(60)
+                    end
+                    if answer == "cancel" then
+                        cancelled = true
+                    elseif not answer then
+                        timedOut = true
+                    else
+                        local number = tonumber(answer)
+                        if number and number % 1 == 0 then
+                            selected = matchedCandidates[number]
                         else
-                            ans = ChatUtil.waitForYesNo(30)
-                        end
-                        if ans == "cancel" then
-                            cancelled = true
-                            break
-                        elseif ans == nil then
-                            chatError("No response. Process ended.")
-                            timedOut = true
-                            break
-                        elseif ans then
-                            selected = name
-                            skipFinalConfirm = true
-                            break
+                            for _, name in ipairs(matchedCandidates) do
+                                if name:lower() == answer:lower() then selected = name break end
+                            end
                         end
                     end
                     if not selected and not cancelled then
@@ -384,7 +397,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                 break
             end
 
-if not deviceFound and not skipRequestedThisType and not cancelled then
+            if not deviceFound and adding and not skipRequestedThisType and not cancelled then
                     chatError("Timeout! Device [" .. ChatUtil.device(label, ChatUtil.code("c")) .. "] not detected.")
                     chatInfo("Check connection and try again, or type 'skip'.")
 
@@ -431,51 +444,10 @@ if not deviceFound and not skipRequestedThisType and not cancelled then
                 chatSuccess("Device detected: " .. ChatUtil.device(name))
                 chatInfo("Found device matches type [" .. ChatUtil.device(label) .. "]")
 
-                local confirmed
-                if skipFinalConfirm then
-                    confirmed = true
-                else
-                    chatQuestion("Add it to config? (Y/N)")
-                    if ui then
-                        confirmed = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
-                    else
-                        confirmed = ChatUtil.waitForYesNo(120)
-                    end
-                end
-
-                if confirmed == "cancel" then
-                    cancelled = true
-                    deviceFound = false
-                elseif confirmed == nil then
-                    chatError("Response timeout. Try again.")
-                elseif confirmed then
-                    -- Move the already added found ones first?
-                    table.insert(foundDevices, name)
-                    chatSuccess("Added: " .. ChatUtil.device(name) .. " -> " .. ChatUtil.device(label))
-
-                    if #foundDevices >= maxCount then
-                        adding = false
-                    else
-                        chatQuestion("Add another [" .. ChatUtil.device(label, ChatUtil.code("b")) .. "]? (Y/N)")
-                        local addMore
-                        if ui then
-                            addMore = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
-                        else
-                            addMore = ChatUtil.waitForYesNo(120)
-                        end
-
-                        if addMore == "cancel" then
-                            cancelled = true
-                        elseif addMore == nil then
-                            chatError("Timeout. Moving to next type.")
-                            adding = false
-                        elseif not addMore then
-                            adding = false
-                        end
-                    end
-                else
-                    chatInfo("Device declined. Connect a different device.")
-                    deviceFound = false
+                table.insert(foundDevices, name)
+                chatSuccess("Added: " .. ChatUtil.device(name) .. " -> " .. ChatUtil.device(label))
+                if #foundDevices >= maxCount then
+                    adding = false
                 end
             end
         end
@@ -605,7 +577,7 @@ end
 ---   touch on Prev/Next — redraw and wait again.
 ---   touch on Back — return "back", nil
 ---   timeout (default 30s) — return "timeout", nil
----   chat/chat_signed — return "chat", message text
+---   paired PocketOS reply — return "chat", message text
 --- @param timeout number|nil seconds before auto-return "timeout" (default 30)
 function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, timeout)
     timeout = timeout or 30
@@ -691,11 +663,13 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, tim
                 local tx, ty = rawEvent[3], rawEvent[4]
                 local pressed = MonitorUtil.getPressedButton({backBtn}, tx, ty)
                 if pressed then return "back", nil end
-            elseif event == "chat_signed" or event == "chat" then
+            elseif event == "chat_signed" or event == "chat" or event == "rednet_message" then
                 local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                 local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
                 if not rawMsg then
                     -- Ignore replies from other players and chat box echoes.
+                elseif msg:lower() == "cancel" then
+                    return "back", nil
                 else
                     return "chat", msg
                 end
@@ -782,11 +756,14 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, tim
                     end
                 end
 
-            elseif event == "chat_signed" or event == "chat" then
+            elseif event == "chat_signed" or event == "chat" or event == "rednet_message" then
                 local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                 local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
                 if not rawMsg then
                     -- Ignore replies from other players and chat box echoes.
+                elseif msg:lower() == "cancel" then
+                    result = "back"
+                    waiting = false
                 else
                     result = "chat"
                     capturedMessage = msg
@@ -947,14 +924,16 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
                     end
                 end
 
-            elseif event == "chat_signed" or event == "chat" then
+            elseif event == "chat_signed" or event == "chat" or event == "rednet_message" then
                 local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                 local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
                 if not rawMsg then
                     -- Ignore replies from other players and chat box echoes.
                 else
                     local lower = string.lower(msg or "")
-                    if lower == "y" or lower == "yes" then
+                    if lower == "cancel" then
+                        return false
+                    elseif lower == "y" or lower == "yes" then
                         return true
                     elseif lower == "n" or lower == "no" then
                         return false
@@ -1006,12 +985,12 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     MonitorUtil.clearScreen(mon)
     HudUtil.drawBackground(mon, "create_edit")
     HudUtil.createEditTitle(mon, "=== Edit " .. configLabel .. " ===")
-    MonitorUtil.drawText(mon, listX, listY, "Follow instructions in CHAT.", MonitorUtil.COLORS.highlight, listBg)
-    MonitorUtil.drawText(mon, listX, listY + 1, "All responses go through in-game chat.", MonitorUtil.COLORS.text, listBg)
+    MonitorUtil.drawText(mon, listX, listY, "Follow instructions on PocketOS.", MonitorUtil.COLORS.highlight, listBg)
+    MonitorUtil.drawText(mon, listX, listY + 1, "Answer using the pocket terminal.", MonitorUtil.COLORS.text, listBg)
 
     chatSeparator()
     chatHighlight("=== Editing " .. configLabel .. " ===")
-    chatInfo("Follow chat instructions. Answer Y or N in game chat.")
+    chatInfo("Follow PocketOS instructions. Answer on the pocket terminal.")
     chatSeparator()
     chatInfo("HOW IT WORKS:")
     chatInfo("Scenario 1: Connect a NEW device (it appears in peripheral list)")
@@ -1216,8 +1195,8 @@ function ConfigWizard.createByTypes(deviceTypes, mon, monSide, configLabel, onSa
     local listX, listY, listBg = area.x, area.y, area.bgColor
 
     ConfigWizard.drawCreateStep(mon, "=== Create " .. configLabel .. " ===", {
-        "Follow instructions in CHAT.",
-        "All responses go through in-game chat.",
+        "Follow instructions on PocketOS.",
+        "Answer using the pocket terminal.",
         "Press Back on the monitor to cancel.",
     })
 
@@ -1236,7 +1215,7 @@ function ConfigWizard.createByTypes(deviceTypes, mon, monSide, configLabel, onSa
         chatHighlight("Step " .. i .. "/" .. total .. ": " .. dt.label)
         ConfigWizard.drawCreateStep(mon, "=== Create " .. configLabel .. " ===", {
             "Step " .. i .. "/" .. total .. ": " .. dt.label,
-            "Connect device in CHAT. Press Back to cancel.",
+            "Connect device. Press Back to cancel.",
         })
         local found, cancelled = ConfigWizard.scanDeviceType(dt, globalAllDevices, { mon = mon, monSide = monSide })
         if cancelled then

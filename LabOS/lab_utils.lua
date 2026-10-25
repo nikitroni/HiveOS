@@ -120,9 +120,23 @@ end
 
 -- Private delivery only; an unavailable owner or chat box never broadcasts.
 local SECTION_SIGN = "\194\167"
+local notificationId = 0
 function Utils.sendPrivateChat(msg)
   local owner = lib.owner
   if type(owner) ~= "string" or not owner:find("%S") then return false end
+  local found, heartId = pcall(rednet.lookup, "heartos", "main", 1)
+  if found and type(heartId) == "number" then
+    notificationId = notificationId + 1
+    local ok, sent = pcall(rednet.send, heartId, {
+      type = "notify", role = "LabOS", text = msg, id = notificationId,
+    }, "hiveos.pocket.v1")
+    if ok and sent == true then
+      local answered, sender, reply = pcall(rednet.receive, "hiveos.pocket.v1", 0.75)
+      if answered and sender == heartId and type(reply) == "table"
+          and reply.type == "notify_ack" and reply.id == notificationId
+          and reply.ok == true then return true end
+    end
+  end
   if type(lib.chat_box) ~= "string" or lib.chat_box == "" then return false end
   local wrapped, chat = pcall(peripheral.wrap, lib.chat_box)
   if not wrapped or not chat then return false end

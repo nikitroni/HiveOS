@@ -7,6 +7,7 @@ local ChatUtil = {}
 
 -- Diagnostic logger (logs/error.log) — used to trace which send branch runs.
 local LogUtil = require("log_util")
+local PocketBridge = require("pocket_bridge")
 
 -- Reference to the wrapped chat_box
 --- @type table
@@ -31,6 +32,10 @@ end
 
 function ChatUtil.isOwner(name)
   return ownerName ~= nil and type(name) == "string" and name:lower() == ownerName:lower()
+end
+
+function ChatUtil.isPocketReady()
+  return PocketBridge.isOnline()
 end
 
 -- Delay between messages in seconds.
@@ -165,7 +170,7 @@ end
 --- @param message string Message text
 --- @param withDelay boolean whether to os.sleep(SEND_DELAY) after sending
 --- @return boolean true if sent successfully
-sendImpl = function(message, withDelay)
+local function sendPrivate(message, withDelay)
     if not chatBox or not ownerName then
         return false
     end
@@ -197,6 +202,15 @@ sendImpl = function(message, withDelay)
     end
 
     return true
+end
+
+function ChatUtil.sendPrivateOnly(message)
+  return sendPrivate(message, false)
+end
+
+sendImpl = function(message, withDelay)
+  if PocketBridge.send("info", message) then return true end
+  return sendPrivate(message, withDelay)
 end
 
 --- Strip MOTD color codes (§ + 1 char) from a string.
@@ -252,7 +266,9 @@ end
 
 --- Send a step instruction message (cyan text — user prompt)
 function ChatUtil.sendStep(message)
-    return ChatUtil.send(MOTD.cyan .. PREFIXES.step .. message)
+    local text = MOTD.cyan .. PREFIXES.step .. message
+    if PocketBridge.prompt("step", text) then return true end
+    return ChatUtil.send(text)
 end
 
 --- Send a highlighted message (dark green — titles/highlights)
@@ -262,7 +278,10 @@ end
 
 --- Send a question/prompt to the user (cyan text)
 function ChatUtil.sendQuestion(message)
-    return ChatUtil.send(MOTD.cyan .. message)
+    local text = MOTD.cyan .. message
+    local kind = message:find("[Yy]/[Nn]") and "yesno" or "question"
+    if PocketBridge.prompt(kind, text) then return true end
+    return ChatUtil.send(text)
 end
 
 --- Wrap a device/peripheral/block name in green (§a).
@@ -377,6 +396,7 @@ end
 --- Wait for a 0.2s timer, ignoring all intermediate events.
 --- Echo from chat_box arrives within ~0.15s — 0.2s is enough.
 local function drainEvents()
+    if PocketBridge.getPocketId() then return end
     local drainId = os.startTimer(0.2)
     while true do
         local e = {os.pullEventRaw()}
@@ -462,6 +482,12 @@ end
 --- Decode a supported event and accept only the configured owner's replies.
 --- Hidden chat messages may retain their leading dollar sign.
 function ChatUtil.extractOwnerChat(eventData)
+  if eventData[1] == "rednet_message" then
+    local answer = PocketBridge.takeReply(eventData)
+    if answer then return ownerName, answer end
+    return nil, nil
+  end
+  if PocketBridge.getPocketId() then return nil, nil end
   local player, message
   if eventData[1] == "chat_signed" then
     player, message = eventData[2], eventData[3]
@@ -492,7 +518,7 @@ end
 function ChatUtil.waitForYesNo(timeout)
     while true do
         local msg = ChatUtil.waitForChat(timeout)
-        if msg == nil then
+        if msg == nil or msg:lower() == "cancel" then
             return nil  -- timeout
         end
 

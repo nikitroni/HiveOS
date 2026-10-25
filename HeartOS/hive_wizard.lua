@@ -1,5 +1,5 @@
 -- hive_wizard.lua
--- Wizard for scanning the hives map via in-game chat.
+-- Wizard for scanning the hives map with PocketOS prompts.
 -- For each hive it scans and groups 3 connected peripherals:
 --   hive_block   -> the hive block itself (beehive, inventory access)
 --   reader_block -> block reader (getBlockData)
@@ -126,7 +126,7 @@ local function drawHiveStep(ui, idLabel, stepNum, stepLabel)
   ConfigWizard.drawCreateStep(ui.mon, "=== Hive Map Wizard: Create ===", {
     "Hive " .. idLabel,
     "Step " .. stepNum .. "/3: " .. stepLabel,
-    "Connect in CHAT. Press Back to cancel.",
+    "Connect block. Press Back to cancel.",
   })
 end
 
@@ -239,7 +239,7 @@ local function mapToItems(map)
   return items
 end
 
---- Print the hives map summary into chat.
+--- Send the hives map summary to the active interface.
 --- @param map table
 local function chatSummary(map)
   for _, hive in ipairs(map) do
@@ -247,7 +247,7 @@ local function chatSummary(map)
   end
 end
 
---- Collect one hive's three blocks and ask the player to confirm in chat.
+--- Collect one hive's three blocks. Confirm the full map before saving.
 --- @param globalAllDevices table consecutive sets of peripherals to skip
 --- @param committed table set of peripherals already used
 --- @param idLabel string label to show (e.g. "id01" or new id)
@@ -269,23 +269,10 @@ local function collectHive(globalAllDevices, committed, idLabel, ui)
   chatInfo(" hive:     " .. ChatUtil.device(record.hive))
   chatInfo(" reader: " .. ChatUtil.device(record.reader))
   chatInfo(" relay:   " .. ChatUtil.device(record.relay))
-  chatQuestion("Accept these blocks? (Y/N)")
-  local accepted
-  if ui then
-    accepted = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
-  else
-    accepted = ChatUtil.waitForYesNo(120)
+  for _, slot in ipairs(HIVE_SLOTS) do
+    committed[record[slot]] = true
   end
-  if accepted == "cancel" then
-    return nil, true
-  elseif accepted == true then
-    for _, slot in ipairs(HIVE_SLOTS) do
-      committed[record[slot]] = true
-    end
-    return record, false
-  end
-  chatError("Blocks skipped for " .. idLabel .. ".")
-  return nil, false
+  return record, false
 end
 
 --- Show a short final message on the monitor and return automatically
@@ -310,6 +297,10 @@ end
 --- @param heartConfig table
 --- @return string|nil protocol or nil when the terminal rejected the freeze
 local function freezeBeeOS(heartConfig)
+  if not ChatUtil.isPocketReady() then
+    ChatUtil.sendError("Open and pair PocketOS before starting the wizard.")
+    return nil
+  end
   local protocol = ConfigManager.PROTOCOL.beeos
   local ok, err = ConfigManager.freezeTerminal(protocol)
   if not ok then
@@ -357,7 +348,7 @@ function HiveWizard.create(mon, heartConfig)
 
   local ui = { mon = mon, monSide = heartConfig.main_monitor }
   ConfigWizard.drawCreateStep(mon, "=== Hive Map Wizard: Create ===", {
-    "Follow instructions in CHAT.",
+    "Follow instructions on PocketOS.",
     "Press Back on the monitor to cancel.",
   })
   os.sleep(3)
@@ -377,14 +368,13 @@ function HiveWizard.create(mon, heartConfig)
   chatInfo(" 1) Hive Block         - inventory methods")
   chatInfo(" 2) Hive Reader        - getBlockData")
   chatInfo(" 3) Redstone Relay     - setBundledOutput")
-  chatInfo("Answer Y/N in game chat, or type 'skip' to abort a step.")
+  chatInfo("Connect each block. Type done after the last hive.")
 
   local globalAllDevices = {}
   local committed = {}
   local hives = {}
 
-  local addMore = true
-  while addMore do
+  while #hives < 99 do
     local idLabel = hiveIdStr(#hives + 1)
     local record, cancelled = collectHive(globalAllDevices, committed, idLabel, ui)
     if cancelled then
@@ -396,18 +386,16 @@ function HiveWizard.create(mon, heartConfig)
     if record then
       table.insert(hives, record)
       chatSuccess("Hive '" .. idLabel .. "' added (" .. #hives .. " total).")
+      if #hives < 99 then
+        chatInfo("Next: connect another hive or type done to review the map.")
+      end
     else
+      if #hives > 0 then break end
       chatError("Hive not added.")
-    end
-    chatQuestion("Add another hive? (Y/N)")
-    local addMoreResult = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 120)
-    if addMoreResult == "cancel" then
-      chatError("Create cancelled by user.")
       ConfigManager.unfreezeTerminal(protocol)
-      exitInfo(mon, "Create cancelled.", COLORS.error)
+      exitInfo(mon, "No hives collected.", COLORS.error)
       return
     end
-    addMore = (addMoreResult == true)
   end
 
   if #hives == 0 then
@@ -441,7 +429,7 @@ function HiveWizard.create(mon, heartConfig)
 end
 -- ==================== EDIT ====================
 
---- Edit flow: the player selects a hive id (id01..id99) in chat.
+--- Edit flow: the player selects a hive id (id01..id99) on PocketOS.
 --- If the id exists its 3 blocks are replaced; if it is new a NEW hive is added.
 --- @param mon table monitor
 --- @param heartConfig table

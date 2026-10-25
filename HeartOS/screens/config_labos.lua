@@ -56,6 +56,10 @@ end
 --- will not open. With a free terminal - freeze succeeds.
 --- Returns protocol, ok.
 local function freezeForEdit(heartConfig)
+    if not ChatUtil.isPocketReady() then
+        ChatUtil.sendError("Open and pair PocketOS before starting the wizard.")
+        return nil, false
+    end
     local protocol = ConfigManager.PROTOCOL.labos
 
     local ok, err = ConfigManager.freezeTerminal(protocol)
@@ -281,6 +285,14 @@ function ConfigLabOS.run(mon, heartConfig)
                 end
             end
         end
+    end
+end
+
+function ConfigLabOS.runPocket(mon, heartConfig, action)
+    if action == "create" then
+        createLabOSConfig(mon, heartConfig)
+    elseif action == "edit" then
+        editLabOSConfig(mon, heartConfig)
     end
 end
 

@@ -8,7 +8,22 @@ local motd = {
   red = sectionSign .. "c",
 }
 local terminalTag = "BeeOS"
+local pocketProtocol = "hiveos.pocket.v1"
 local chatBox
+local notificationId = 0
+
+local function sendToHeart(message)
+  local found, id = pcall(rednet.lookup, "heartos", "main", 1)
+  if not found or type(id) ~= "number" then return false end
+  notificationId = notificationId + 1
+  local ok, sent = pcall(rednet.send, id, {
+    type = "notify", role = terminalTag, text = message, id = notificationId,
+  }, pocketProtocol)
+  if not ok or sent ~= true then return false end
+  local answered, sender, reply = pcall(rednet.receive, pocketProtocol, 0.75)
+  return answered and sender == id and type(reply) == "table"
+      and reply.type == "notify_ack" and reply.id == notificationId and reply.ok == true
+end
 
 local function loadConfig()
   if not fs.exists("beeos_config.lua") then return nil end
@@ -35,6 +50,7 @@ local function send(message)
   local cfg = loadConfig()
   local owner = cfg and cfg.owner
   if type(owner) ~= "string" or not owner:match("%S") then return false end
+  if sendToHeart(message) then return true end
   if not chatBox and not ChatNotify.init() then return false end
 
   local ok, sent = pcall(function()
