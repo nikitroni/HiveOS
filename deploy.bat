@@ -86,7 +86,7 @@ if "!LOCAL_ONLY!"=="1" (
   goto :done
 )
 echo [deploy] Pushing to origin...
-git push
+git push -u origin HEAD
 if errorlevel 1 goto :fail
 echo [deploy] Done.
 goto :done
