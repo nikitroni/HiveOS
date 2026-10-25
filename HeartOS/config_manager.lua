@@ -153,6 +153,7 @@ function ConfigManager.createConfig(devices, deviceTypes)
     end
     local config = {
         peripherals = peripherals,
+        owner = settings.get("hiveos.owner"),
     }
     return config
 end
@@ -224,6 +225,10 @@ local DEFAULT_TIMEOUT = 5
 --- @return boolean, any
 function ConfigManager.rednetCall(targetId, protocol, command, data, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
+
+    if command == "update_config" and type(data) == "table" and data.peripherals then
+        data.owner = settings.get("hiveos.owner")
+    end
 
     local msg
     if data ~= nil then
@@ -312,6 +317,10 @@ end
 --- Send the initial config to the terminal (without freezing)
 function ConfigManager.sendInitialConfig(protocol, configData, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
+
+    if type(configData) == "table" and configData.peripherals then
+        configData.owner = settings.get("hiveos.owner")
+    end
 
     local id = ConfigManager.resolve(protocol)
     if not id then

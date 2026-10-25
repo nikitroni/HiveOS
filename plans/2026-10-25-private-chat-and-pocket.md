@@ -12,11 +12,11 @@
 - Environment: ATM10 8.3, separate test world with computer folders linked directly to `0/1/2`.
 - Branch switching does not isolate ignored runtime sources from the running test world.
 
-## Decisions pending
+## Decisions
 
-- Notification recipient: configured owner or operation initiator; obtain the owner's in-game name if applicable.
-- Exact mobile computer item, proposed Advanced Wireless Pocket Computer.
-- Proposed interaction: accept an unambiguous device automatically, ask when multiple candidates exist, and confirm the complete configuration once before saving.
+- Notifications go to one configured owner. HeartOS asks for the exact Minecraft username on first run and saves it in CraftOS settings. Run `heart_main --owner` to change it later.
+- The mobile device is an Advanced Wireless Pocket Computer.
+- Accept an unambiguous device automatically, ask when multiple candidates exist, and confirm the complete configuration once before saving.
 
 ## Milestones
 
@@ -51,3 +51,11 @@
 - AP 0.7 exposes `sendMessageToPlayer(message, username, ...)`.
 - Check the installed API before selecting a compatibility path; never fall back to a public send.
 - References: https://docs.advanced-peripherals.de/0.8/peripherals/chat_box/ and https://docs.advanced-peripherals.de/0.7/peripherals/chat_box/.
+
+## Milestone 1 checkpoint
+
+- Implementation prepared in numbered runtime sources and publication mirrors.
+- Owner is sent with BeeOS/LabOS configurations; existing configurations are synchronized when HeartOS starts and both target terminals are idle.
+- During this transition, the owner can answer wizard prompts with hidden chat messages such as `$y`, `$n`, and `$skip`.
+- Lua syntax checks and 347 mock assertions passed. Actual ATM10 8.3 testing remains with the user.
+- Commit is local to `upgrade`; no push or merge.

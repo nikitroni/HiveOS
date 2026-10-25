@@ -148,15 +148,10 @@ function ConfigWizard.waitYesNoMonitor(mon, monSide, timeout)
                 return "cancel"
             end
         elseif event == "chat_signed" or event == "chat" then
-            local player, rawMsg
-            if event == "chat_signed" then
-                player, rawMsg = rawEvent[2], rawEvent[3]
-            else
-                player, rawMsg = ChatUtil.extractChat(rawEvent)
-            end
+            local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
             local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
-            if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
-                -- own echo -- skip
+            if not rawMsg then
+                -- Ignore replies from other players and chat box echoes.
             else
                 local lower = string.lower(msg)
                 if lower == "y" or lower == "yes" then
@@ -192,15 +187,10 @@ local function waitAnyMessageMonitor(mon, monSide, timeout)
                 return "cancel"
             end
         elseif event == "chat_signed" or event == "chat" then
-            local player, rawMsg
-            if event == "chat_signed" then
-                player, rawMsg = rawEvent[2], rawEvent[3]
-            else
-                player, rawMsg = ChatUtil.extractChat(rawEvent)
-            end
+            local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
             local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
-            if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
-                -- own echo -- skip
+            if not rawMsg then
+                -- Ignore replies from other players and chat box echoes.
             elseif msg ~= "" then
                 return msg
             end
@@ -329,12 +319,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                     end
 
                 elseif event == "chat_signed" or event == "chat" then
-                    local player, rawMsg
-                    if event == "chat_signed" then
-                        player, rawMsg = rawEvent[2], rawEvent[3]
-                    else
-                        player, rawMsg = ChatUtil.extractChat(rawEvent)
-                    end
+                    local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                     local msg = rawMsg or ""
                     if msg ~= "" then
                         local isEcho = (event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player))
@@ -707,15 +692,10 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, tim
                 local pressed = MonitorUtil.getPressedButton({backBtn}, tx, ty)
                 if pressed then return "back", nil end
             elseif event == "chat_signed" or event == "chat" then
-                local player, rawMsg
-                if event == "chat_signed" then
-                    player, rawMsg = rawEvent[2], rawEvent[3]
-                else
-                    player, rawMsg = ChatUtil.extractChat(rawEvent)
-                end
+                local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                 local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
-                if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
-                    -- own echo — skip
+                if not rawMsg then
+                    -- Ignore replies from other players and chat box echoes.
                 else
                     return "chat", msg
                 end
@@ -803,15 +783,10 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, tim
                 end
 
             elseif event == "chat_signed" or event == "chat" then
-                local player, rawMsg
-                if event == "chat_signed" then
-                    player, rawMsg = rawEvent[2], rawEvent[3]
-                else
-                    player, rawMsg = ChatUtil.extractChat(rawEvent)
-                end
+                local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                 local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
-                if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
-                    -- own echo — skip
+                if not rawMsg then
+                    -- Ignore replies from other players and chat box echoes.
                 else
                     result = "chat"
                     capturedMessage = msg
@@ -973,15 +948,10 @@ function ConfigWizard.waitYesNoNav(mon, monSide, title, items, promptText, timeo
                 end
 
             elseif event == "chat_signed" or event == "chat" then
-                local player, rawMsg
-                if event == "chat_signed" then
-                    player, rawMsg = rawEvent[2], rawEvent[3]
-                else
-                    player, rawMsg = ChatUtil.extractChat(rawEvent)
-                end
+                local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                 local msg = (rawMsg or ""):match("^%s*(.-)%s*$") or ""
-                if event == "chat" and ChatUtil.isOwnEcho and ChatUtil.isOwnEcho(msg, player) then
-                    -- own echo — skip
+                if not rawMsg then
+                    -- Ignore replies from other players and chat box echoes.
                 else
                     local lower = string.lower(msg or "")
                     if lower == "y" or lower == "yes" then

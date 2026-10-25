@@ -3,6 +3,7 @@
 -- Peripheral names come from HeartOS config via lab_config_loader (lab_lib).
 
 local lib = require("lab_lib")
+local Utils = require("lab_utils")
 
 local Breeding = {}
 
@@ -42,19 +43,11 @@ local RELAY_SIDES = { "front", "back", "left", "right", "top", "bottom" }
 
 -- Chat notification with optional MOTD color code ("c" red, "e" yellow).
 local function chatMessage(msg, colorCode)
-  --- @type table
-  local chat = peripheral.wrap(lib.chat_box)
-  if not chat then
-    print(msg)
-    return
-  end
   local text = msg
   if colorCode then
     text = SECTION_SIGN .. colorCode .. msg
   end
-  pcall(function()
-    chat.sendMessage(text, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
-  end)
+  return Utils.sendPrivateChat(text)
 end
 
 local function isCage(item)

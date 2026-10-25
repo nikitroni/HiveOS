@@ -3,7 +3,7 @@
 --
 -- LabOS uses the static library lab_lib.lua (HUD coordinates, genes,
 -- settings - without peripherals) and the dynamic config labos_config.lua from HeartOS
--- (peripheral names only, flat keys).
+-- (peripheral names and the notification owner).
 --
 -- Adapter tasks:
 --   1. Load lab_lib.lua (static base).
@@ -182,6 +182,11 @@ local function load()
     end
 
     local dynamicConfig = loadTableFile(LABOS_CONFIG_FILE)
+    labLib.owner = nil
+    if dynamicConfig and type(dynamicConfig.owner) == "string" then
+      local owner = dynamicConfig.owner:match("^%s*(.-)%s*$")
+      if owner ~= "" then labLib.owner = owner end
+    end
     if dynamicConfig then
         mergePeripheralNames(labLib, dynamicConfig)
     end

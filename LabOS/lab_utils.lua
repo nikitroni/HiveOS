@@ -118,19 +118,30 @@ end
 
 -- ==================== CHAT / ITEM / BEE HELPERS ====================
 
--- Send a chat line with the LabOS prefix (red for errors, green otherwise).
+-- Private delivery only; an unavailable owner or chat box never broadcasts.
 local SECTION_SIGN = "\194\167"
+function Utils.sendPrivateChat(msg)
+  local owner = lib.owner
+  if type(owner) ~= "string" or not owner:find("%S") then return false end
+  if type(lib.chat_box) ~= "string" or lib.chat_box == "" then return false end
+  local wrapped, chat = pcall(peripheral.wrap, lib.chat_box)
+  if not wrapped or not chat then return false end
+
+  local ok, delivered
+  if type(chat.sendMessageToPlayer) == "function" then
+    ok, delivered = pcall(chat.sendMessageToPlayer, msg, owner, "LabOS", nil, nil, nil, true)
+  elseif type(chat.sendMessage) == "function" then
+    ok, delivered = pcall(chat.sendMessage, msg, { player = owner, prefix = "LabOS", utf8 = true })
+  else
+    return false
+  end
+  return ok and delivered == true
+end
+
+-- Send a private line with the LabOS prefix (red for errors, green otherwise).
 function Utils.sendChat(msg, isError)
-    --- @type table
-    local chat = peripheral.wrap(lib.chat_box)
-    if not chat then
-        print("[LabOS] " .. msg)
-        return
-    end
-    local color = isError and (SECTION_SIGN .. "c") or (SECTION_SIGN .. "a")
-    pcall(function()
-        chat.sendMessage(color .. msg, { prefix = "LabOS", prefixColor = "blue", utf8 = true })
-    end)
+  local color = isError and (SECTION_SIGN .. "c") or (SECTION_SIGN .. "a")
+  return Utils.sendPrivateChat(color .. msg)
 end
 
 -- Find the first slot holding the given item and the total count in the chest.
