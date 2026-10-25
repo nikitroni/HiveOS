@@ -5,8 +5,8 @@ cd /d "%~dp0"
 if not exist "0\" goto :nosrc
 if not exist "1\" goto :nosrc
 if not exist "2\" goto :nosrc
-if not exist "4\startup.lua" goto :nosrc
-if not exist "4\pocket_main.lua" goto :nosrc
+if not exist "3\startup.lua" goto :nosrc
+if not exist "3\pocket_main.lua" goto :nosrc
 
 set "COMMIT_MSG=%~1"
 set "LOCAL_ONLY=0"
@@ -44,12 +44,12 @@ echo [deploy] Mirroring 2/ -^> HeartOS/
 xcopy "2" "HeartOS" /E /I /Y >nul
 if errorlevel 1 goto :fail
 
-echo [deploy] Mirroring PocketOS program files from 4/
+echo [deploy] Mirroring PocketOS program files from 3/
 mkdir "PocketOS"
 if errorlevel 1 goto :fail
-xcopy "4\startup.lua" "PocketOS\" /I /Y >nul
+xcopy "3\startup.lua" "PocketOS\" /I /Y >nul
 if errorlevel 1 goto :fail
-xcopy "4\pocket_main.lua" "PocketOS\" /I /Y >nul
+xcopy "3\pocket_main.lua" "PocketOS\" /I /Y >nul
 if errorlevel 1 goto :fail
 
 git add -A BeeOS/ LabOS/ HeartOS/ PocketOS/
@@ -92,7 +92,7 @@ echo [deploy] Done.
 goto :done
 
 :nosrc
-echo [deploy] FAILED: required source files are missing from 0/ 1/ 2/ or 4/.
+echo [deploy] FAILED: required source files are missing from 0/ 1/ 2/ or 3/.
 exit /b 1
 
 :fail

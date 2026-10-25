@@ -3,8 +3,8 @@
 ## Scope
 
 - Continue on `upgrade`; preserve the existing roles and main branch.
-- Add `4/` as the PocketOS source and `PocketOS/` as the publication mirror.
-- Only `4/startup.lua` and `4/pocket_main.lua` are part of PocketOS. Existing unrelated files in `4/` remain untouched and unpublished.
+- Add `3/` as the PocketOS source and `PocketOS/` as the publication mirror.
+- Only `3/startup.lua` and `3/pocket_main.lua` are part of PocketOS. Existing unrelated files in `4/` remain untouched and unpublished.
 - Installer offers PocketOS as role 4 and can install from a chosen branch.
 - HeartOS opens both wired and wireless/Ender modems; the Pocket Computer opens its wireless/Ender upgrade.
 - HeartOS bridges notifications from BeeOS and LabOS to the Pocket Computer; private owner chat is the fallback while the Pocket Computer is offline.
@@ -25,7 +25,7 @@
 
 ## Work ownership
 
-- Pocket agent: `4/startup.lua`, `4/pocket_main.lua`.
+- Pocket agent: `3/startup.lua`, `3/pocket_main.lua`.
 - Wizard agent: `2/config_wizard.lua`, `2/hive_wizard.lua`.
 - Installer agent: `installer.lua`, user documentation.
 - Coordinator: Heart bridge, shared chat transport, Bee/Lab notification routing, `deploy.bat`, integration tests and review.
