@@ -442,7 +442,7 @@ function ChatUtil.waitForChat(timeout)
             return nil
         end
 
-        if event == "chat_signed" or event == "chat" then
+        if event == "chat_signed" or event == "chat" or event == "rednet_message" then
             local player, message = ChatUtil.extractOwnerChat(eventData)
             if message then
                 return message, player
@@ -554,7 +554,7 @@ function ChatUtil.waitForAnyMessage(timeout)
             return nil
         end
 
-        if event == "chat_signed" or event == "chat" then
+        if event == "chat_signed" or event == "chat" or event == "rednet_message" then
             local _, message = ChatUtil.extractOwnerChat(eventData)
             if message then
                 return message

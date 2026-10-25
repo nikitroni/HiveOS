@@ -51,4 +51,25 @@ assert(stale == nil, "Old prompt answer reached a new question")
 local _, choice = chat.extractOwnerChat(event(44, { type = "reply", seq = nextPrompt.seq, text = "1" }))
 assert(choice == "1")
 
+local queuedEvents = {}
+env.os.startTimer = function() return 90 end
+env.os.pullEvent = function()
+  local item = table.remove(queuedEvents, 1)
+  assert(item, "No event queued for dialogue")
+  return table.unpack(item)
+end
+assert(chat.sendQuestion("Answer yes"))
+local chatPrompt = sent[#sent].message
+queuedEvents[#queuedEvents + 1] = event(44, {
+  type = "reply", seq = chatPrompt.seq, text = "yes",
+})
+assert(chat.waitForChat(10) == "yes", "waitForChat ignored the pocket event")
+assert(chat.sendQuestion("Enter device key"))
+local anyPrompt = sent[#sent].message
+queuedEvents[#queuedEvents + 1] = event(44, {
+  type = "reply", seq = anyPrompt.seq, text = "tech_monitor",
+})
+assert(chat.waitForAnyMessage(10) == "tech_monitor",
+  "waitForAnyMessage ignored the pocket event")
+
 print("Pocket dialogue integration tests passed")
