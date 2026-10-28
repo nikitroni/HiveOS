@@ -64,14 +64,13 @@ end
 
 function Genetics.formatBeeName(rawType)
     if not rawType then return "Unknown" end
-    local name = rawType:gsub("^productivebees:", "")
-    name = name:gsub("_bee$", "")
+    local name = rawType:match("^[^:]+:(.+)$") or rawType
     local parts = {}
     for part in name:gmatch("[^_]+") do
         part = part:sub(1,1):upper() .. part:sub(2):lower()
         table.insert(parts, part)
     end
-    name = table.concat(parts)
+    name = table.concat(parts, " ")
     if #name > 11 then name = name:sub(1, 11) end
     return name
 end

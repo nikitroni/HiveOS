@@ -323,9 +323,10 @@ function Buttons.drawAll(frame)
         buf.setVisible(false)
         buf.setBackgroundColor(colors.black)
         buf.clear()
-        term.redirect(buf)
-        drawFn(buf, frame)
-        term.redirect(buttonMon)
+        local previousTerm = term.redirect(buf)
+        local drawn, drawError = pcall(drawFn, buf, frame)
+        term.redirect(previousTerm)
+        if not drawn then error(drawError, 0) end
         buf.setVisible(true)
         buf.redraw()
     end

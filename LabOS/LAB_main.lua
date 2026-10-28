@@ -43,6 +43,9 @@ local processing = false
 local currentStatus = "free"
 local frozen = false
 local waitPrepared = false  -- redraw of the wait background when the mode changes
+local freezeFrameErrorLogged = false
+local renderCheckRemaining = 0
+local renderCheckReason = nil
 -- Safeguard against a lost unfreeze: if the freeze lasts too long without
 -- active configuration (no config arrives), we lift it automatically.
 local frozenSince = nil
@@ -220,15 +223,45 @@ local function handleConfigMessage(sender, message)
                 -- Terminal is busy with a task: do not freeze, Edit must not open
                 rednet.send(sender, "wait")
             else
-                frozen = true
-                frozenSince = os.clock()
-                rednet.send(sender, "frozen")
+                local ready, freezeError = pcall(function()
+                    local mainMon = peripheral.wrap(lib.peripherals.main_monitor)
+                    if not mainMon then
+                        error("Main monitor is not connected: " .. tostring(lib.peripherals.main_monitor))
+                    end
+                    Boot.prepareScreen(mainMon)
+                    local drawn, drawError = Boot.drawWaitFrame(mainMon)
+                    if not drawn then error(drawError, 0) end
+                end)
+                if ready then
+                    frozen = true
+                    frozenSince = os.clock()
+                    waitPrepared = true
+                    freezeFrameErrorLogged = false
+                    renderCheckRemaining = 10
+                    renderCheckReason = "freeze"
+                    addLogLine("Freeze screen visible")
+                    rednet.send(sender, "frozen")
+                else
+                    addLogLine("!FREEZE ERROR: " .. tostring(freezeError))
+                    rednet.send(sender, "freeze_error")
+                end
             end
         elseif message == "unfreeze" then
             frozen = false
             frozenSince = nil
             waitPrepared = false
-            rednet.send(sender, "running")
+            renderCheckRemaining = 10
+            renderCheckReason = "unfreeze"
+            local resumed, resumeError = pcall(function()
+                HUD.drawAll(bees, geneCounts, neededCounts, mode, logBuffer, frame, currentStatus)
+                Buttons.drawAll(frame)
+            end)
+            if not resumed then
+                addLogLine("!RESUME ERROR: " .. tostring(resumeError))
+            else
+                addLogLine("Main screen resumed")
+            end
+            rednet.send(sender, resumed and "running" or "resume_error")
         end
         return nil
     end
@@ -241,11 +274,11 @@ local function handleConfigMessage(sender, message)
     if command == "request_config" then
         addLogLine("Net<- request_config")
         if saveDynamicConfig(message.data) then
-            rednet.send(sender, "config_received")
+            return "config_reloaded", "config_received"
         else
             rednet.send(sender, "config_error")
         end
-        return "config_reloaded"
+        return nil
     end
 
     if command == "update_config" then
@@ -256,11 +289,11 @@ local function handleConfigMessage(sender, message)
         end
         lastConfigActivity = os.clock()
         if saveDynamicConfig(message.data) then
-            rednet.send(sender, "config_updated")
+            return "config_reloaded", "config_updated"
         else
             rednet.send(sender, "config_error")
         end
-        return "config_reloaded"
+        return nil
     end
 
     return nil
@@ -706,9 +739,9 @@ local function waitForConfigMessage()
         -- p1 = senderId, p2 = message
         local okPull, evt, senderId, msg = pcall(os.pullEvent, "rednet_message")
         if okPull and evt == "rednet_message" then
-            local action = handleConfigMessage(senderId, msg)
+            local action, response = handleConfigMessage(senderId, msg)
             if action == "config_reloaded" then
-                return true
+                return senderId, response
             end
         end
     end
@@ -725,9 +758,15 @@ while not hasPeripheralConfig() do
         printConfigStatus()
         waiting = true
     end
-    waitForConfigMessage()
-    reinitAfterConfig()
-    if hasPeripheralConfig() then
+    local configSender, configResponse = waitForConfigMessage()
+    local reloaded, reloadError = pcall(reinitAfterConfig)
+    if configResponse then
+        rednet.send(configSender, reloaded and configResponse or "config_error")
+    end
+    if not reloaded then
+        print("LAB config reload error: " .. tostring(reloadError))
+    end
+    if reloaded and hasPeripheralConfig() then
         break
     else
         printConfigStatus()
@@ -771,24 +810,35 @@ local function handleRednet(senderId, message)
         addLogLine(string.format("Received bees from hive %d (sender %s, expected %s).", targetHive, tostring(lastSenderId), tostring(lastExpectedCount)))
         mode = "wait"
     else
-        local action = handleConfigMessage(senderId, message)
+        local action, response = handleConfigMessage(senderId, message)
         if action == "config_reloaded" then
             -- Config accepted from HeartOS - configuration is done. We lift the
             -- freeze ourselves (unfreeze could be lost in a race
             -- with rendering/loading), otherwise the wait screen would remain
             -- hanging forever.
             frozen = false
+            frozenSince = nil
             waitPrepared = false
-            pcall(function()
+            renderCheckRemaining = 10
+            renderCheckReason = "config update"
+            local reloaded, reloadError = pcall(function()
                 reinitAfterConfig()
-                -- show a short loading after the update
-                --- @type table
-                local mainMon = peripheral.wrap(lib.peripherals.main_monitor)
-                if mainMon then
-                    Boot.prepareScreen(mainMon)
-                    Boot.show(mainMon, 2)
+                local monitorName = lib.peripherals.main_monitor
+                if type(monitorName) ~= "string" or not peripheral.wrap(monitorName) then
+                    error("Main monitor is not connected: " .. tostring(monitorName))
                 end
+                HUD.drawAll(bees, geneCounts, neededCounts, mode, logBuffer, frame, currentStatus)
+                Buttons.drawAll(frame)
             end)
+            if not reloaded then
+                addLogLine("!CONFIG RELOAD ERROR: " .. tostring(reloadError))
+                print("LAB config reload error: " .. tostring(reloadError))
+            else
+                addLogLine("Config loaded; main monitor rendered")
+            end
+            if response then
+                rednet.send(senderId, reloaded and response or "config_error")
+            end
         end
     end
 end
@@ -805,6 +855,14 @@ local function mainLoop()
         local event, p1, p2, p3 = os.pullEvent()
 
         if event == "timer" and p1 == timer then
+            if renderCheckRemaining > 0 then
+                renderCheckRemaining = renderCheckRemaining - 1
+                if renderCheckRemaining == 0 then
+                    addLogLine("Render loop continued after " .. tostring(renderCheckReason)
+                        .. "; frozen=" .. tostring(frozen))
+                    renderCheckReason = nil
+                end
+            end
             local ok, err = pcall(function()
                 frame = frame + 1
 
@@ -828,7 +886,11 @@ local function mainLoop()
                             Boot.prepareScreen(mainMon)
                             waitPrepared = true
                         end
-                        Boot.drawWaitFrame(mainMon)
+                        local drawn, drawError = Boot.drawWaitFrame(mainMon)
+                        if not drawn and not freezeFrameErrorLogged then
+                            freezeFrameErrorLogged = true
+                            addLogLine("!FREEZE FRAME ERROR: " .. tostring(drawError))
+                        end
                     end
                 else
                     if waitPrepared then
@@ -872,6 +934,9 @@ local function mainLoop()
             if not okR then
                 print("LAB rednet error: " .. tostring(errR))
                 addLogLine("!REDNET ERROR: " .. tostring(errR))
+            end
+            if renderCheckRemaining > 0 then
+                timer = os.startTimer(0.1)
             end
         end
     end

@@ -316,7 +316,7 @@ end
 
 --- Send the initial config to the terminal (without freezing)
 function ConfigManager.sendInitialConfig(protocol, configData, timeout)
-    timeout = timeout or DEFAULT_TIMEOUT
+    timeout = timeout or 15
 
     if type(configData) == "table" and configData.peripherals then
         configData.owner = settings.get("hiveos.owner")
@@ -327,14 +327,8 @@ function ConfigManager.sendInitialConfig(protocol, configData, timeout)
         return false, "Terminal not found: " .. protocol
     end
 
-    rednet.send(id, { command = "request_config", data = configData }, protocol)
-    local sender, response = rednet.receive(timeout)
-    if not sender then
-        return false, "No response (timeout " .. timeout .. "s)"
-    end
-    if sender ~= id then
-        return false, "Response from wrong terminal"
-    end
+    local ok, response = ConfigManager.rednetCall(id, protocol, "request_config", configData, timeout)
+    if not ok then return false, response end
     if response ~= "config_received" then
         return false, "Terminal rejected config (response: " .. tostring(response) .. ")"
     end
@@ -351,7 +345,7 @@ function ConfigManager.freezeTerminal(protocol, timeout)
     if not id then
         return false, "Terminal not found: " .. protocol
     end
-    local ok, response = ConfigManager.rednetCall(id, protocol, "freeze", nil, timeout or 3)
+    local ok, response = ConfigManager.rednetCall(id, protocol, "freeze", nil, timeout or 10)
     if not ok then
         return false, "Freeze failed: " .. tostring(response)
     end
@@ -367,7 +361,7 @@ function ConfigManager.sendUpdateConfig(protocol, configData, timeout)
     if not id then
         return false, "Terminal not found: " .. protocol
     end
-    local ok, response = ConfigManager.rednetCall(id, protocol, "update_config", configData, timeout or 5)
+    local ok, response = ConfigManager.rednetCall(id, protocol, "update_config", configData, timeout or 15)
     if not ok then
         return false, "Config send failed: " .. tostring(response)
     end
@@ -383,7 +377,7 @@ function ConfigManager.unfreezeTerminal(protocol, timeout)
     if not id then
         return false, "Terminal not found: " .. protocol
     end
-    local ok, response = ConfigManager.rednetCall(id, protocol, "unfreeze", nil, timeout or 3)
+    local ok, response = ConfigManager.rednetCall(id, protocol, "unfreeze", nil, timeout or 10)
     if not ok then
         return false, "Unfreeze failed: " .. tostring(response)
     end

@@ -9,6 +9,7 @@ local ConfigManager = require("config_manager")
 local ConfigWizard = require("config_wizard")
 local DeviceTypes = require("device_types")
 local ChatUtil = require("chat_util")
+local PocketBridge = require("pocket_bridge")
 
 local ConfigLabOS = {}
 
@@ -24,30 +25,35 @@ local function trySendConfig(mon, heartConfig, startY, protocol, frozen)
 
     if not config then
         MonitorUtil.drawText(mon, 2, startY, "No config to send!", COLORS.error)
-        return
+        ChatUtil.sendError("LabOS config could not be read on HeartOS.")
+        if frozen then ConfigManager.unfreezeTerminal(protocol) end
+        os.sleep(2)
+        return false
     end
 
     local ok, msg
+    local releaseError = nil
     if frozen then
         ok, msg = ConfigManager.sendUpdateConfig(protocol, config)
-        ConfigManager.unfreezeTerminal(protocol)  -- best effort: unfreeze in any case
-        if ok then
-            ChatUtil.sendSuccess("Config sent to LabOS!")
-            MonitorUtil.drawText(mon, 2, startY, "Sent to LabOS!", COLORS.success)
-        else
-            ChatUtil.sendError("Send failed: " .. msg)
-            MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
+        local released, reason = ConfigManager.unfreezeTerminal(protocol)
+        if not released then
+            released, reason = ConfigManager.unfreezeTerminal(protocol)
         end
+        if not released then releaseError = reason end
     else
         ok, msg = ConfigManager.sendInitialConfig(protocol, config)
-        if ok then
-            ChatUtil.sendSuccess("Config sent to LabOS!")
-            MonitorUtil.drawText(mon, 2, startY, "Sent to LabOS!", COLORS.success)
-        else
-            ChatUtil.sendError("Send failed: " .. msg)
-            MonitorUtil.drawText(mon, 2, startY, "Send failed. Saved locally.", COLORS.error)
-        end
     end
+    if ok and not releaseError then
+        ChatUtil.sendSuccess("LabOS confirmed the new config and resumed.")
+        MonitorUtil.drawText(mon, 2, startY, "LabOS confirmed new config.", COLORS.success)
+    else
+        local failure = releaseError and ("LabOS did not confirm unfreeze: " .. tostring(releaseError))
+            or ("LabOS did not confirm config: " .. tostring(msg))
+        ChatUtil.sendError("Saved on HeartOS. " .. failure)
+        MonitorUtil.drawText(mon, 2, startY, "LabOS did not confirm. Check PocketOS.", COLORS.error)
+    end
+    os.sleep(2)
+    return ok and not releaseError
 end
 
 --- Freeze LabOS before editing.
@@ -70,12 +76,6 @@ local function freezeForEdit(heartConfig)
     return protocol, true
 end
 
---- Get the color for a group by index (cyclically)
-local function getGroupColor(index)
-    local colors = { colors.orange, colors.green, colors.blue, colors.purple, colors.yellow, colors.cyan, colors.pink, colors.red }
-    return colors[((index - 1) % #colors) + 1]
-end
-
 --- View config with paginated monitor display.
 --- A missing/incomplete config shows a required-blocks checklist instead of
 --- a red "NOT FOUND" error.
@@ -90,56 +90,30 @@ local function viewLabOSConfig(mon, heartConfig)
     end
 
     local peripherals = (config and config.peripherals) or {}
-    local entries = {}
     local filledCount = 0
-    local allFilled = config ~= nil
+    local items = {}
     for _, dt in ipairs(deviceTypes) do
         local value = peripherals[dt.key]
         local filled = value ~= nil and value ~= ""
             and not (type(value) == "table" and #value == 0)
         if filled then
             filledCount = filledCount + 1
-        else
-            allFilled = false
         end
-        table.insert(entries, { label = dt.label, filled = filled })
+        local display = filled and value or "(missing)"
+        table.insert(items, {
+            key = (filled and "[x] " or "[ ] ") .. dt.label,
+            value = display,
+            color = filled and colors.green or colors.orange,
+        })
     end
 
-    -- Fully configured: show the normal paginated view.
-    if allFilled and #deviceTypes > 0 then
-        local items = {}
-        for idx, dt in ipairs(deviceTypes) do
-            table.insert(items, {
-                key = dt.key,
-                value = peripherals[dt.key],
-                color = getGroupColor(idx),
-            })
-        end
-        MonitorUtil.paginatedView(mon, "===   View LabOS Config  ===", items, heartConfig.main_monitor, nil, nil, "labos")
-        return
-    end
-
-    local header, headerColor
-    if config == nil then
-        header = "Config not created yet. Required blocks:"
-        headerColor = colors.yellow
-    elseif filledCount == #deviceTypes then
-        header = "Config complete"
-        headerColor = colors.green
-    else
-        header = "Config incomplete. Required blocks:"
-        headerColor = colors.yellow
-    end
-
-    MonitorUtil.drawConfigChecklist(
-        mon,
-        "===   View LabOS Config  ===",
-        header,
-        headerColor,
-        entries,
-        heartConfig.main_monitor,
-        "labos"
-    )
+    table.insert(items, 1, {
+        key = "Configured",
+        value = tostring(filledCount) .. "/" .. tostring(#deviceTypes),
+        color = filledCount == #deviceTypes and colors.green or colors.yellow,
+    })
+    MonitorUtil.paginatedView(mon, "===   View LabOS Config  ===", items,
+        heartConfig.main_monitor, nil, true, "labos")
 end
 
 --- Edit: select groups to replace via editByKeys
@@ -182,9 +156,15 @@ local function editLabOSConfig(mon, heartConfig)
                 newConfig[k] = v
             end
             newConfig.peripherals = updatedDevices
-            ConfigManager.saveConfig(newConfig, CONFIG_FILE)
+            local saved, saveError = ConfigManager.saveConfig(newConfig, CONFIG_FILE)
+            if not saved then
+                ChatUtil.sendError("LabOS config was not saved: " .. tostring(saveError))
+                if frozen then ConfigManager.unfreezeTerminal(protocol) end
+                os.sleep(2)
+                return false
+            end
             ChatUtil.sendSuccess("LabOS config updated!")
-            trySendConfig(mon, heartConfig, 10, protocol, frozen)
+            return trySendConfig(mon, heartConfig, 10, protocol, frozen)
         end
     )
 
@@ -194,6 +174,7 @@ local function editLabOSConfig(mon, heartConfig)
             ConfigManager.unfreezeTerminal(protocol)
         end
     end
+    PocketBridge.endWizard()
 end
 
 --- Create new config (devices only).
@@ -225,9 +206,15 @@ local function createLabOSConfig(mon, heartConfig)
         "LabOS (Create)",
         function(devices)
             local config = ConfigManager.createConfig(devices, deviceTypes)
-            ConfigManager.saveConfig(config, CONFIG_FILE)
+            local saved, saveError = ConfigManager.saveConfig(config, CONFIG_FILE)
+            if not saved then
+                ChatUtil.sendError("LabOS config was not saved: " .. tostring(saveError))
+                if frozen then ConfigManager.unfreezeTerminal(protocol) end
+                os.sleep(2)
+                return false
+            end
             ChatUtil.sendSuccess("LabOS config saved!")
-            trySendConfig(mon, heartConfig, 10, protocol, frozen)
+            return trySendConfig(mon, heartConfig, 10, protocol, frozen)
         end
     )
 
@@ -236,8 +223,10 @@ local function createLabOSConfig(mon, heartConfig)
         if frozen then
             ConfigManager.unfreezeTerminal(protocol)
         end
+        PocketBridge.endWizard()
         return
     end
+    PocketBridge.endWizard()
 end
 
 -- ==================== MAIN ENTRY ====================

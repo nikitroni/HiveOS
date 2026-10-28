@@ -367,6 +367,19 @@ function MonitorUtil.paginatedView(mon, title, items, side, linesPerPage, intera
         local display = type(item.value) == "table" and table.concat(item.value, ", ") or tostring(item.value)
         local lines = {}
 
+        if prefixLen >= listW then
+            local remainingKey = item.key
+            while #remainingKey > 0 do
+                table.insert(lines, {
+                    prefix = "", display = remainingKey:sub(1, listW),
+                    prefixLen = 0, color = item.color,
+                })
+                remainingKey = remainingKey:sub(listW + 1)
+            end
+            prefix = ""
+            prefixLen = 0
+        end
+
         local oneLine = prefix .. display
         if #oneLine <= listW then
             table.insert(lines, {prefix = prefix, display = display, prefixLen = prefixLen, color = item.color})

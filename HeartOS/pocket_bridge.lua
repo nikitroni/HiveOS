@@ -7,16 +7,6 @@ local lastSeen = nil
 local nextSequence = 0
 local activeSequence = nil
 local fallback = nil
-local wizardBusy = false
-local actions = {
-  beeos_create = true, beeos_edit = true,
-  labos_create = true, labos_edit = true,
-  hive_create = true, hive_edit = true,
-}
-
-function PocketBridge.setWizardBusy(value)
-  wizardBusy = value == true
-end
 
 function PocketBridge.setFallback(sendPrivate)
   fallback = sendPrivate
@@ -31,13 +21,38 @@ function PocketBridge.getPocketId()
   return pocketId
 end
 
-function PocketBridge.resetPairing()
+function PocketBridge.sendPairCode(deliverPrivate)
+  if pocketId or type(deliverPrivate) ~= "function" then return false end
+  return deliverPrivate("PocketOS pairing code: " .. pairCode) == true
+end
+
+function PocketBridge.resetPairing(deliverPrivate)
+  if type(deliverPrivate) ~= "function" then return false end
+  local newCode = tostring(math.random(100000, 999999))
+  if deliverPrivate("PocketOS pairing code: " .. newCode) ~= true then
+    return false
+  end
+  local oldId = pocketId
+  local oldSeen = lastSeen
+  local oldSequence = activeSequence
+  local oldCode = pairCode
   pocketId = nil
   lastSeen = nil
   activeSequence = nil
-  pairCode = tostring(math.random(100000, 999999))
+  pairCode = newCode
   settings.unset("hiveos.pocketId")
-  return settings.save()
+  if not settings.save() then
+    pocketId = oldId
+    lastSeen = oldSeen
+    activeSequence = oldSequence
+    pairCode = oldCode
+    if oldId then settings.set("hiveos.pocketId", oldId) end
+    return false
+  end
+  if type(oldId) == "number" then
+    pcall(rednet.send, oldId, { type = "unpaired" }, protocol)
+  end
+  return true
 end
 
 function PocketBridge.isOnline()
@@ -55,6 +70,27 @@ function PocketBridge.send(kind, text)
   return sendToPocket({ type = "message", kind = kind, text = text })
 end
 
+function PocketBridge.showScanStep(step, total, label, signalOnly, canFinish)
+  return sendToPocket({
+    type = "wizard_step", step = step, total = total, label = label,
+    signalOnly = signalOnly == true,
+    canFinish = canFinish == true,
+  })
+end
+
+function PocketBridge.showScanResult(ok, label)
+  return sendToPocket({ type = "wizard_result", ok = ok, label = label })
+end
+
+function PocketBridge.endScan()
+  return sendToPocket({ type = "wizard_end" })
+end
+
+function PocketBridge.endWizard()
+  activeSequence = nil
+  return sendToPocket({ type = "wizard_closed" })
+end
+
 function PocketBridge.prompt(kind, text)
   if not PocketBridge.isOnline() then return false end
   nextSequence = nextSequence + 1
@@ -64,7 +100,21 @@ function PocketBridge.prompt(kind, text)
   return sent
 end
 
+function PocketBridge.promptChoices(label, choices)
+  if not PocketBridge.isOnline() then return false end
+  nextSequence = nextSequence + 1
+  local sequence = nextSequence
+  local sent = sendToPocket({
+    type = "wizard_choices", label = label, choices = choices, seq = sequence,
+  })
+  if sent then activeSequence = sequence end
+  return sent
+end
+
 function PocketBridge.clearPrompt()
+  if activeSequence ~= nil then
+    sendToPocket({ type = "clear_prompt", seq = activeSequence })
+  end
   activeSequence = nil
 end
 
@@ -126,14 +176,6 @@ function PocketBridge.handleEvent(eventData)
     rednet.send(sender, {
       type = "notify_ack", id = message.id, ok = delivered,
     }, protocol)
-  elseif message.type == "action" and sender == pocketId and actions[message.action] then
-    if wizardBusy or not PocketBridge.isOnline() then
-      rednet.send(sender, { type = "status", text = "HeartOS is busy; try again from the main menu" }, protocol)
-    else
-      wizardBusy = true
-      rednet.send(sender, { type = "status", text = "Opening " .. message.action }, protocol)
-      os.queueEvent("pocket_action", message.action)
-    end
   end
 end
 

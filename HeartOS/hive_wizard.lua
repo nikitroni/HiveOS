@@ -9,6 +9,7 @@
 local MonitorUtil = require("screens/monitor_util")
 local HudUtil = require("screens/hud_util")
 local ChatUtil = require("chat_util")
+local PocketBridge = require("pocket_bridge")
 local ConfigWizard = require("config_wizard")
 local ConfigManager = require("config_manager")
 local DeviceTypes = require("device_types")
@@ -61,7 +62,7 @@ end
 --- @param ui table|nil optional { mon, monSide } monitor UI for the Back button
 --- @return string|nil found peripheral name, or nil if skipped/timeout
 --- @return boolean cancelled true when the user pressed Back on the monitor
-local function scanOne(key, globalAllDevices, ui)
+local function scanOne(key, globalAllDevices, ui, stepNum, idLabel)
   local base = HIVE_TYPES[key]
   if not base then
     chatError("Internal error: hive type '" .. key .. "' not found.")
@@ -71,14 +72,25 @@ local function scanOne(key, globalAllDevices, ui)
   -- Copy with max=1 so scanDeviceType stops after the first confirmed match.
   local singleType = {
     key = base.key,
-    label = base.label,
+    label = (idLabel and ("Hive " .. idLabel .. " - ") or "") .. base.label,
     checkMethods = base.checkMethods,
+    anyMethods = base.anyMethods,
+    namePatterns = base.namePatterns,
     types = base.types,
     max = 1,
     group = base.group,
   }
 
-  local found, cancelled = ConfigWizard.scanDeviceType(singleType, globalAllDevices, ui)
+  local scanUi = ui and {
+    mon = ui.mon, monSide = ui.monSide,
+    step = stepNum, total = 3,
+    requireSignal = ui.requireSignal,
+    autoAcceptChoice = ui.requireSignal,
+    allowDone = ui.canFinish and stepNum == 1,
+    allowExisting = ui.allowExisting,
+    excludeNames = ui.usedThisHive,
+  } or nil
+  local found, cancelled = ConfigWizard.scanDeviceType(singleType, globalAllDevices, scanUi)
   if cancelled then
     return nil, true
   end
@@ -94,11 +106,10 @@ end
 --- Used to prevent adding a hive whose blocks are already mapped.
 --- The scope is ONLY the hives map config (single config), as required.
 --- @return table, table (array for globalAllDevices, set for lookup)
-local function seedCommitted()
+local function seedCommitted(hives)
   local committed = {}
   local out = {}
 
-  local hives, _ = ConfigManager.loadFromFile(HIVES_FILE)
   if hives then
     for _, hive in ipairs(hives) do
       for _, slot in ipairs(HIVE_SLOTS) do
@@ -123,7 +134,8 @@ end
 --- @param stepLabel string e.g. "Hive Block"
 local function drawHiveStep(ui, idLabel, stepNum, stepLabel)
   if not ui then return end
-  ConfigWizard.drawCreateStep(ui.mon, "=== Hive Map Wizard: Create ===", {
+  ConfigWizard.drawCreateStep(ui.mon, "=== Hive Map Wizard: "
+      .. (ui.mode or "Create") .. " ===", {
     "Hive " .. idLabel,
     "Step " .. stepNum .. "/3: " .. stepLabel,
     "Connect block. Press Back to cancel.",
@@ -141,11 +153,12 @@ end
 --- @return boolean cancelled true when the user pressed Back on the monitor
 local function scanHive(globalAllDevices, committed, idLabel, ui)
   local snapshot = #globalAllDevices
+  if ui then ui.usedThisHive = {} end
 
   chatSeparator()
   chatHighlight("=== Step 1/3: " .. ChatUtil.device("Hive Block") .. " ===")
   drawHiveStep(ui, idLabel, 1, "Hive Block")
-  local hiveBlock, cancelled1 = scanOne("hive_block", globalAllDevices, ui)
+  local hiveBlock, cancelled1 = scanOne("hive_block", globalAllDevices, ui, 1, idLabel)
   if cancelled1 then
     rollback(globalAllDevices, snapshot)
     return nil, true
@@ -154,11 +167,12 @@ local function scanHive(globalAllDevices, committed, idLabel, ui)
     rollback(globalAllDevices, snapshot)
     return nil, false
   end
+  if ui then ui.usedThisHive[hiveBlock] = true end
 
   chatSeparator()
   chatHighlight("=== Step 2/3: " .. ChatUtil.device("Hive Reader") .. " ===")
   drawHiveStep(ui, idLabel, 2, "Hive Reader")
-  local readerBlock, cancelled2 = scanOne("reader_block", globalAllDevices, ui)
+  local readerBlock, cancelled2 = scanOne("reader_block", globalAllDevices, ui, 2, idLabel)
   if cancelled2 then
     rollback(globalAllDevices, snapshot)
     return nil, true
@@ -167,11 +181,12 @@ local function scanHive(globalAllDevices, committed, idLabel, ui)
     rollback(globalAllDevices, snapshot)
     return nil, false
   end
+  if ui then ui.usedThisHive[readerBlock] = true end
 
   chatSeparator()
   chatHighlight("=== Step 3/3: " .. ChatUtil.device("Redstone Relay") .. " ===")
   drawHiveStep(ui, idLabel, 3, "Redstone Relay")
-  local relayBlock, cancelled3 = scanOne("relay_block", globalAllDevices, ui)
+  local relayBlock, cancelled3 = scanOne("relay_block", globalAllDevices, ui, 3, idLabel)
   if cancelled3 then
     rollback(globalAllDevices, snapshot)
     return nil, true
@@ -323,6 +338,9 @@ local function saveAndSend(map, mon, heartConfig, protocol)
     chatSuccess("Hives map saved to " .. path .. " (" .. #map .. " hives)!")
   else
     chatError("Failed to save hives map: " .. path)
+    ConfigManager.unfreezeTerminal(protocol)
+    exitInfo(mon, "Save failed. Map not sent.", COLORS.error)
+    return
   end
 
   local ok2, msg2 = ConfigManager.sendUpdateConfig(protocol, { command = "hives_map", data = map })
@@ -346,7 +364,7 @@ function HiveWizard.create(mon, heartConfig)
     ChatUtil.init(nil)
   end
 
-  local ui = { mon = mon, monSide = heartConfig.main_monitor }
+  local ui = { mon = mon, monSide = heartConfig.main_monitor, requireSignal = true }
   ConfigWizard.drawCreateStep(mon, "=== Hive Map Wizard: Create ===", {
     "Follow instructions on PocketOS.",
     "Press Back on the monitor to cancel.",
@@ -376,6 +394,7 @@ function HiveWizard.create(mon, heartConfig)
 
   while #hives < 99 do
     local idLabel = hiveIdStr(#hives + 1)
+    ui.canFinish = #hives > 0
     local record, cancelled = collectHive(globalAllDevices, committed, idLabel, ui)
     if cancelled then
       chatError("Create cancelled by user.")
@@ -459,67 +478,91 @@ function HiveWizard.edit(mon, heartConfig)
     return
   end
 
-  local existingIds = {}
-  for _, hv in ipairs(map) do
-    table.insert(existingIds, hiveIdStr(hv.id))
-  end
-
-  chatSeparator()
-  chatHighlight("=== Hive Map Wizard: Edit ===")
-  chatInfo("Existing hives: " .. table.concat(existingIds, ", "))
-  chatInfo("Type the hive id to modify (e.g. id01), or 'done' to finish.")
-  chatInfo("If the id exists its 3 blocks will be replaced.")
-  chatInfo("If the id is new, a NEW hive with that id will be added.")
-  chatInfo("Blocks for each hive: Hive Block, Reader, Relay.")
-
-  local globalAllDevices, committed = seedCommitted()
+  local globalAllDevices, committed = seedCommitted(map)
   local changed = 0
 
   while true do
-    -- Show the current hives map on the monitor (working-area layout with
-    -- Prev/Next/Back buttons) and wait for the player to type a hive id in
-    -- chat, press Back, or hit the timeout.
-    chatSeparator()
-    chatQuestion("Enter a hive id (id01..id99) or 'done':")
+    local choices = {}
+    local ids = {}
+    for _, hive in ipairs(map) do
+      choices[#choices + 1] = hiveIdStr(hive.id)
+      ids[hive.id] = true
+    end
+    local nextFree = nil
+    for id = 1, 99 do
+      if not ids[id] then nextFree = id break end
+    end
+    if nextFree then choices[#choices + 1] = "Add " .. hiveIdStr(nextFree) end
+    choices[#choices + 1] = "Finish editing"
+
+    if not PocketBridge.promptChoices("Choose hive to edit", choices) then
+      chatError("PocketOS disconnected. Edit stopped without saving.")
+      ConfigManager.unfreezeTerminal(protocol)
+      exitInfo(mon, "PocketOS disconnected.", COLORS.error)
+      return
+    end
     local pageResult, capturedMsg = ConfigWizard.editPageLoop(
         mon, heartConfig.main_monitor,
         "===   Hive Map Edit  ===",
         mapToItems(map),
-        nil,   -- linesPerPage -> working area height
-        180    -- timeout for typing an id in chat
+        nil, 180
     )
 
     if pageResult == "back" then
+      PocketBridge.clearPrompt()
       chatInfo("Edit cancelled by user.")
       ConfigManager.unfreezeTerminal(protocol)
+      PocketBridge.endWizard()
       exitInfo(mon, "Edit cancelled.", COLORS.error)
       return
     elseif pageResult == "timeout" then
-      chatInfo("No input. Finishing edit.")
+      PocketBridge.clearPrompt()
+      chatInfo("No PocketOS answer. Finishing edit.")
       break
     end
 
-    local input = capturedMsg or ""
-    local token = tostring(input):gsub("%s+", ""):lower()
-    if token == "done" or token == "end" or token == "stop" or token == "finish" then
+    local input = tostring(capturedMsg or "")
+    local selected = tonumber(input)
+    if selected and selected % 1 == 0 then
+      input = choices[selected] or ""
+    end
+    if input == "Finish editing" or input:lower() == "done" then
       break
     end
 
     local idNum = parseHiveId(input)
+    if not idNum and nextFree and input == "Add " .. hiveIdStr(nextFree) then
+      idNum = nextFree
+    end
     if idNum == nil then
-      chatError("Invalid input '" .. input .. "'. Use id01..id99 or 'done'.")
+      chatError("Choose a hive from the PocketOS list.")
     else
       local idLabel = hiveIdStr(idNum)
-      local record = collectHive(globalAllDevices, committed, idLabel)
-      if record == nil then
+      local found = ConfigManager.findHiveById(map, idNum)
+      local allowExisting = {}
+      if found then
+        for _, slot in ipairs(HIVE_SLOTS) do
+          allowExisting[found[slot]] = true
+          committed[found[slot]] = nil
+        end
+      end
+      local scanUi = {
+        mon = mon, monSide = heartConfig.main_monitor,
+        requireSignal = true, mode = "Edit", allowExisting = allowExisting,
+      }
+      local record, cancelled = collectHive(globalAllDevices, committed, idLabel, scanUi)
+      if not record and found then
+        for _, slot in ipairs(HIVE_SLOTS) do committed[found[slot]] = true end
+      end
+      if cancelled then
+        ConfigManager.unfreezeTerminal(protocol)
+        PocketBridge.endWizard()
+        exitInfo(mon, "Edit cancelled.", COLORS.error)
+        return
+      elseif record == nil then
         chatError("No blocks collected for " .. idLabel .. ".")
       else
-        local found = ConfigManager.findHiveById(map, idNum)
         if found then
-          -- Free the previously mapped blocks so they can be reused.
-          for _, slot in ipairs(HIVE_SLOTS) do
-            committed[found[slot]] = nil
-          end
           found.hive = record.hive
           found.reader = record.reader
           found.relay = record.relay
@@ -528,6 +571,7 @@ function HiveWizard.edit(mon, heartConfig)
           table.insert(map, { id = idNum, hive = record.hive, reader = record.reader, relay = record.relay })
           chatSuccess("NEW hive " .. idLabel .. " added to the map.")
         end
+        globalAllDevices, committed = seedCommitted(map)
         changed = changed + 1
       end
     end
@@ -536,6 +580,7 @@ function HiveWizard.edit(mon, heartConfig)
   if changed == 0 then
     chatError("No changes made. Map not saved.")
     ConfigManager.unfreezeTerminal(protocol)
+    PocketBridge.endWizard()
     exitInfo(mon, "No changes made.", COLORS.error)
     return
   end
@@ -557,6 +602,7 @@ function HiveWizard.edit(mon, heartConfig)
     ConfigManager.unfreezeTerminal(protocol)
     exitInfo(mon, "Save cancelled.", COLORS.error)
   end
+  PocketBridge.endWizard()
 end
 
 return HiveWizard

@@ -9,6 +9,7 @@ local ConfigManager = require("config_manager")
 local ConfigWizard = require("config_wizard")
 local DeviceTypes = require("device_types")
 local ChatUtil = require("chat_util")
+local PocketBridge = require("pocket_bridge")
 
 local ConfigBeeOS = {}
 
@@ -195,6 +196,7 @@ local function editBeeOSConfig(mon, heartConfig)
             ConfigManager.unfreezeTerminal(protocol)
         end
     end
+    PocketBridge.endWizard()
 end
 
 --- Create new config (devices only, no hive map).
@@ -238,6 +240,7 @@ local function createBeeOSConfig(mon, heartConfig)
             ConfigManager.unfreezeTerminal(protocol)
         end
     end
+    PocketBridge.endWizard()
 end
 
 -- ==================== MAIN ENTRY ====================

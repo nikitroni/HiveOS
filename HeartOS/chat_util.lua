@@ -109,7 +109,6 @@ function ChatUtil.init(name)
         if chatBox then
             chatBoxName = name
             chatBoxPlayerName = tryGetChatBoxPlayerName(chatBox)
-            LogUtil.warn("ChatUtil.init: wrapped named peripheral '" .. chatBoxName .. "', player='" .. (chatBoxPlayerName or "?") .. "'")
             return true
         end
     end
@@ -125,14 +124,12 @@ function ChatUtil.init(name)
                     chatBox = wrapped
                     chatBoxName = pName
                     chatBoxPlayerName = tryGetChatBoxPlayerName(chatBox)
-                    LogUtil.warn("ChatUtil.init: wrapped '" .. chatBoxName .. "' (methods: " .. table.concat(methods, ",") .. ")")
                     return true
                 end
             end
         end
     end
 
-    LogUtil.warn("ChatUtil.init: NO chat peripheral found. Names: " .. table.concat(allNames, ","))
     return false
 end
 

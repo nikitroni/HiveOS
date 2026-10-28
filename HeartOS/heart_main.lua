@@ -8,31 +8,6 @@ local RednetProtocol = require("rednet_protocol")
 local PocketBridge = require("pocket_bridge")
 
 local args = { ... }
-local owner = settings.get("hiveos.owner")
-if args[1] == "--owner" or type(owner) ~= "string" or owner == "" then
-  term.clear()
-  term.setCursorPos(1, 1)
-  print("HiveOS private notifications")
-  print("Enter the apiary owner's exact Minecraft username.")
-  repeat
-    write("Owner: ")
-    owner = read():match("^%s*(.-)%s*$")
-    if owner == "" or not owner:match("^[%w_]+$") then
-      print("Use a non-empty username containing letters, digits or underscores.")
-      owner = nil
-    end
-  until owner
-  settings.set("hiveos.owner", owner)
-  if not settings.save() then
-    error("Cannot save the apiary owner. Check free disk space.")
-  end
-end
-ChatUtil.setOwner(owner)
-ChatUtil.init(nil)
-PocketBridge.setFallback(ChatUtil.sendPrivateOnly)
-if args[1] == "--pair" and not PocketBridge.resetPairing() then
-  error("Cannot reset PocketOS pairing")
-end
 
 -- ==================== MONITOR CONNECTION ====================
 
@@ -75,6 +50,45 @@ local function getMainMonitor()
 end
 
 local mainMon = getMainMonitor()
+local owner = settings.get("hiveos.owner")
+if args[1] == "--owner" or type(owner) ~= "string" or owner == "" then
+  mainMon.setBackgroundColor(colors.black)
+  mainMon.setTextColor(colors.white)
+  mainMon.clear()
+  mainMon.setCursorPos(2, 2)
+  mainMon.write("HeartOS setup")
+  mainMon.setCursorPos(2, 4)
+  mainMon.write("Enter owner name on computer")
+  term.setBackgroundColor(colors.black)
+  term.setTextColor(colors.white)
+  term.clear()
+  term.setCursorPos(1, 1)
+  print("HeartOS setup")
+  print("Enter your Minecraft username for private alerts.")
+  repeat
+    write("Owner: ")
+    owner = read():match("^%s*(.-)%s*$")
+    if owner == "" or not owner:match("^[%w_]+$") then
+      print("Use letters, digits or underscores.")
+      owner = nil
+    end
+  until owner
+  settings.set("hiveos.owner", owner)
+  if not settings.save() then
+    error("Cannot save the apiary owner. Check free disk space.")
+  end
+end
+ChatUtil.setOwner(owner)
+local chatReady = ChatUtil.init(nil)
+PocketBridge.setFallback(ChatUtil.sendPrivateOnly)
+if args[1] == "--pair" and not PocketBridge.resetPairing(ChatUtil.sendPrivateOnly) then
+  error("Cannot reset PocketOS pairing or deliver its code privately")
+end
+if PocketBridge.getPairCode() and args[1] ~= "--pair" then
+  if not PocketBridge.sendPairCode(ChatUtil.sendPrivateOnly) then
+    print("PocketOS code could not be sent privately. Check owner and chat box.")
+  end
+end
 
 -- ==================== REDNET ====================
 
@@ -96,22 +110,34 @@ end
 
 -- Existing installations receive the owner without repeating device setup.
 local ConfigManager = require("config_manager")
+local ownerSyncPending = {}
 for _, role in ipairs({ "beeos", "labos" }) do
   local path = role .. "_config.lua"
   local config = ConfigManager.loadFromFile(path)
   if config and config.peripherals and config.owner ~= owner then
-    print("Syncing private notification owner to " .. role .. "...")
     local ok, reason = ConfigManager.sendConfigToTerminal(role, config)
     if ok then
       config.owner = owner
       local saved, saveError = ConfigManager.saveToFile(config, path)
-      if not saved then print(tostring(saveError)) end
+      if not saved then
+        ownerSyncPending[#ownerSyncPending + 1] = role .. " (save failed: " .. tostring(saveError) .. ")"
+      end
     else
-      print("Owner sync pending for " .. role .. ": " .. tostring(reason))
-      print("Start the idle terminal, then restart HeartOS to retry.")
+      ownerSyncPending[#ownerSyncPending + 1] = role
     end
   end
 end
+
+term.clear()
+term.setCursorPos(1, 1)
+print("HeartOS running")
+print("Owner: " .. owner)
+print("Private chat: " .. (chatReady and "ready" or "unavailable"))
+if #ownerSyncPending > 0 then
+  print("Owner sync pending: " .. table.concat(ownerSyncPending, ", "))
+  print("Start idle terminals; restart HeartOS to retry.")
+end
+print("PocketOS: use wireless modems on both devices.")
 
 -- ==================== UI STARTUP ====================
 

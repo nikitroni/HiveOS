@@ -108,8 +108,9 @@ function prepareScreen(mon)
     mon.setBackgroundColor(colors.black)
     mon.clear()
     local oldTerm = term.redirect(mon)
-    paintutils.drawImage(bg, 1, 1)
+    local drawn, drawError = pcall(paintutils.drawImage, bg, 1, 1)
     term.redirect(oldTerm)
+    if not drawn then error(drawError, 0) end
     markPrepared(mon)
 end
 
@@ -139,7 +140,7 @@ end
 -- One frame of the wait animation: only the bar (the background is already drawn by prepareScreen).
 -- Smooth scale 0% -> 100% -> 0%.
 function drawWaitFrame(mon)
-    local ok = pcall(function()
+    local ok, err = pcall(function()
         if not isPrepared(mon) then
             prepareScreen(mon)
         end
@@ -148,7 +149,7 @@ function drawWaitFrame(mon)
         drawBar(mon, math.floor(wave * 100))
         drawFlaskAnimation(mon)
     end)
-    return ok
+    return ok, err
 end
 
 -- Startup animation of fixed duration

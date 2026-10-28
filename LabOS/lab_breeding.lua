@@ -105,11 +105,12 @@ local function scanBeesInChest()
       if custom and custom.isProductiveBee == 1 then
         local age = custom.Age
         if age == nil then age = item.Age end
+        local beeType = Utils.getCageBeeIdentity(item)
         for _ = 1, (item.count or 1) do
           table.insert(bees, {
             slot = (item.Slot or 0) + 1,
             age = age,
-            type = custom.type,
+            type = beeType,
           })
         end
       end

@@ -94,8 +94,16 @@ local function readHive(hive)
             for _, bee in ipairs(raw.bees) do
                 local beeData = { type = "unknown", genes = {} }
                 if bee.entity_data then
-                    if bee.entity_data.type then
-                        beeData.type = bee.entity_data.type
+                    local entityData = bee.entity_data
+                    if type(entityData.type) == "string" and entityData.type ~= ""
+                        and entityData.type ~= "unknown" then
+                        beeData.type = entityData.type
+                    else
+                        local entityId = entityData.id or entityData.entity
+                        if type(entityId) == "string" and entityId ~= ""
+                            and entityId ~= "productivebees:configurable_bee" then
+                            beeData.type = entityId
+                        end
                     end
                     -- Look for attributes in different places
                     local attrHandler = nil

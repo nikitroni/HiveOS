@@ -5,6 +5,7 @@ local MonitorUtil = require("screens/monitor_util")
 local HudUtil = require("screens/hud_util")
 local ChatUtil = require("chat_util")
 local LogUtil = require("log_util")
+local PocketBridge = require("pocket_bridge")
 
 local ConfigWizard = {}
 
@@ -55,7 +56,8 @@ end
 
 --- Check if device has all required methods
 local function matchesMethods(name, checkMethods)
-    local methods = peripheral.getMethods(name)
+    local ok, methods = pcall(peripheral.getMethods, name)
+    if not ok or type(methods) ~= "table" then return false end
     for _, required in ipairs(checkMethods) do
         local found = false
         for _, m in ipairs(methods) do
@@ -71,6 +73,26 @@ local function matchesMethods(name, checkMethods)
     return true
 end
 
+local function matchesAnyMethod(name, anyMethods)
+    if not anyMethods then return true end
+    local ok, methods = pcall(peripheral.getMethods, name)
+    if not ok or type(methods) ~= "table" then return false end
+    for _, candidate in ipairs(anyMethods) do
+        for _, method in ipairs(methods) do
+            if method == candidate then return true end
+        end
+    end
+    return false
+end
+
+local function matchesName(name, patterns)
+    if not patterns then return true end
+    for _, pattern in ipairs(patterns) do
+        if name:match(pattern) then return true end
+    end
+    return false
+end
+
 --- Check the peripheral type against an optional whitelist (O(1) lookup).
 --- When `types` is absent the device always matches (backward compatible).
 local function matchesTypes(name, types)
@@ -82,6 +104,8 @@ end
 --- Full match: required methods plus the optional type whitelist.
 local function deviceMatches(name, deviceType)
     return matchesMethods(name, deviceType.checkMethods)
+        and matchesAnyMethod(name, deviceType.anyMethods)
+        and matchesName(name, deviceType.namePatterns)
         and matchesTypes(name, deviceType.types)
 end
 
@@ -94,7 +118,46 @@ local function chatWarning(msg) ChatUtil.sendWarning(msg) end
 local function chatStep(msg) ChatUtil.sendStep(msg) end
 local function chatHighlight(msg) ChatUtil.sendHighlight(msg) end
 local function chatQuestion(msg) ChatUtil.sendQuestion(msg) end
+local function scanQuestion(msg)
+    if PocketBridge.prompt("scan", msg) then return true end
+    return chatQuestion(msg)
+end
 local function chatSeparator() ChatUtil.sendSeparator() end
+
+local function getMissingRequired(deviceTypes, devices)
+    local missing = {}
+    for _, deviceType in ipairs(deviceTypes) do
+        local value = devices[deviceType.key]
+        if deviceType.required ~= false and
+            (value == nil or value == "" or (type(value) == "table" and #value == 0)) then
+            missing[#missing + 1] = deviceType.label
+        end
+    end
+    return missing
+end
+
+local function resolveEditChoice(answer, deviceTypes)
+    local text = tostring(answer or ""):match("^%s*(.-)%s*$"):lower()
+    if text == "0" or text == "done" or text == "finish"
+        or text == tostring(#deviceTypes + 1) then
+        return "done"
+    end
+    local number = tonumber(text)
+    if number and number % 1 == 0 and deviceTypes[number] then
+        return deviceTypes[number].key
+    end
+    local found = nil
+    for _, deviceType in ipairs(deviceTypes) do
+        local key = deviceType.key:lower()
+        local label = deviceType.label:lower()
+        if text ~= "" and (text == key or text == label
+            or key:sub(1, #text) == text or label:sub(1, #text) == text) then
+            if found and found ~= deviceType.key then return nil end
+            found = deviceType.key
+        end
+    end
+    return found
+end
 
 --- Build a comma-joined list of device/peripheral names, each colored green.
 local function deviceList(list, sep)
@@ -220,33 +283,77 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
     local label = deviceType.label
 
     -- Optional monitor UI: Back cancels the whole scan (old callers pass no ui).
-    local backBtn = ui and HudUtil.getFooter(ui.mon, 1, 1).back or nil
+    local backBtn = ui and ui.mon and HudUtil.getFooter(ui.mon, 1, 1).back or nil
     local cancelled = false
+    local rejected = {}
+    local signaled = {}
+    local invalidReported = {}
 
-    chatSeparator()
-    chatHighlight("=== " .. ChatUtil.device(label) .. " ===")
-    chatInfo("Required: " .. (maxCount == 999 and "unlimited" or tostring(maxCount)))
+    local function canSelect(name)
+        if type(name) ~= "string" or rejected[name]
+            or (ui and ui.excludeNames and ui.excludeNames[name])
+            or (ui and ui.monSide and name == ui.monSide) then
+            return false
+        end
+        for _, existing in ipairs(foundDevices) do
+            if existing == name then return false end
+        end
+        return not isInGlobalList(name, globalAllDevices)
+            or (ui and ui.allowExisting and ui.allowExisting[name] == true)
+    end
+
+    local function matchingCandidates(names)
+        local matches = {}
+        for _, name in ipairs(names) do
+            if (not (ui and ui.requireSignal) or signaled[name])
+                and canSelect(name) and deviceMatches(name, deviceType) then
+                matches[#matches + 1] = name
+            end
+        end
+        table.sort(matches)
+        return matches
+    end
 
     local adding = true
     local skipRequestedThisType = false
     local matchedCandidates = nil
     local stepAborted = false
     while adding and not skipRequestedThisType and not cancelled and not stepAborted do
+        PocketBridge.showScanStep(ui and ui.step or 1, ui and ui.total or 1,
+            label, ui and ui.requireSignal, ui and ui.allowDone)
         local deviceFound = false
         local detectedName = nil
         matchedCandidates = nil
 
         while adding and not deviceFound and not skipRequestedThisType and not cancelled do
-            chatSeparator()
-            chatQuestion("Connect " .. ChatUtil.device(label) .. ", or type done/skip to continue.")
-
             local prevList = getPeripheralList()
+            local promptSent = false
+            local retryScan = false
+            local available = matchingCandidates(prevList)
+            if #available == 1 then
+                if ui and ui.confirmSingle then
+                    matchedCandidates = available
+                else
+                    detectedName = available[1]
+                    deviceFound = true
+                end
+            elseif #available > 1 then
+                matchedCandidates = available
+            else
+                local step = ui and ui.step and ("Step " .. ui.step .. "/" .. ui.total .. ": ") or ""
+                local instruction = ui and ui.requireSignal
+                    and (ui.allowDone and ". Connect or reconnect it, or finish the map."
+                        or ". Connect or reconnect this block.")
+                    or ". Connect it to the network; type skip if absent."
+                scanQuestion(step .. label .. instruction)
+                promptSent = true
+            end
 
             local timeout = 120
             local elapsed = 0
-            local scanning = true
+            local scanning = not deviceFound and not matchedCandidates
 
-            local scanTimerId = os.startTimer(0.5)
+            local scanTimerId = scanning and os.startTimer(0.5) or nil
 
             while scanning and elapsed < timeout do
                 local rawEvent = {os.pullEventRaw()}
@@ -254,71 +361,58 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
 
                 if event == "timer" and rawEvent[2] == scanTimerId then
                     elapsed = elapsed + 0.5
-
                     local currentList = getPeripheralList()
-                    local added, removed = compareLists(prevList, currentList)
-
-                    if #added == 1 and #removed == 0 then
-                        local name = added[1]
-                        if deviceMatches(name, deviceType) then
-                            detectedName = name
-                            deviceFound = true
-                            scanning = false
+                    local added = compareLists(prevList, currentList)
+                    if ui and ui.requireSignal then
+                        for _, name in ipairs(added) do signaled[name] = true end
+                    end
+                    local matches = matchingCandidates(currentList)
+                    if #matches == 1 then
+                        if ui and ui.confirmSingle then
+                            matchedCandidates = matches
                         else
-                            chatError("Detected: " .. ChatUtil.device(name, ChatUtil.code("c")) .. " (does not match required methods/type)")
-                            if not isInGlobalList(name, globalAllDevices) then
-                                table.insert(globalAllDevices, name)
-                            end
-                            prevList = currentList
-                            chatInfo("Try a different device.")
+                            detectedName = matches[1]
+                            deviceFound = true
                         end
-                    elseif #removed == 1 and #added == 1 then
-                        local removedName = removed[1]
-                        local addedName = added[1]
-                        if removedName == addedName and isInGlobalList(addedName, globalAllDevices) then
-                            if deviceMatches(addedName, deviceType) then
-                                detectedName = addedName
-                                deviceFound = true
-                                scanning = false
-                            end
-                        end
-                        if not deviceFound then
-                            prevList = currentList
-                        end
-                    elseif #added > 1 then
-                        local matched = {}
+                        scanning = false
+                    elseif #matches > 1 then
+                        matchedCandidates = matches
+                        scanning = false
+                    else
                         for _, name in ipairs(added) do
-                            if deviceMatches(name, deviceType) then
-                                table.insert(matched, name)
+                            if canSelect(name) then
+                                PocketBridge.showScanResult(false, label)
+                                chatError("Not a " .. label .. ": " .. ChatUtil.device(name))
+                                invalidReported[name] = true
                             end
                         end
-                        if #matched == 0 then
-                            chatError("Detected: " .. deviceList(added) .. " (does not match required methods/type)")
-                            chatInfo("Try a different device.")
-                            for _, name in ipairs(added) do
-                                if not isInGlobalList(name, globalAllDevices) then
-                                    table.insert(globalAllDevices, name)
+                        if ui and ui.requireSignal then
+                            for name in pairs(signaled) do
+                                local present = false
+                                for _, connectedName in ipairs(currentList) do
+                                    if connectedName == name then present = true break end
+                                end
+                                if not invalidReported[name] and canSelect(name)
+                                    and not deviceMatches(name, deviceType)
+                                    and present then
+                                    PocketBridge.showScanResult(false, label)
+                                    chatError("Not a " .. label .. ": " .. ChatUtil.device(name))
+                                    invalidReported[name] = true
                                 end
                             end
-                            prevList = currentList
-                        else
-                            table.sort(matched)
-                            matchedCandidates = matched
-                            scanning = false
                         end
-                    elseif #added > 0 or #removed > 0 then
-                        for _, name in ipairs(added) do
-                            if not isInGlobalList(name, globalAllDevices) then
-                                table.insert(globalAllDevices, name)
-                            end
-                        end
-                        prevList = currentList
                     end
+                    prevList = currentList
 
                     if scanning then
                         scanTimerId = os.startTimer(0.5)
                     end
 
+                elseif event == "peripheral" then
+                    if ui and ui.requireSignal and type(rawEvent[2]) == "string" then
+                        signaled[rawEvent[2]] = true
+                    end
+                    scanTimerId = os.startTimer(0.25)
                 elseif event == "chat_signed" or event == "chat" or event == "rednet_message" then
                     local player, rawMsg = ChatUtil.extractOwnerChat(rawEvent)
                     local msg = rawMsg or ""
@@ -328,7 +422,8 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                         if not isEcho and command == "cancel" then
                             cancelled = true
                             scanning = false
-                        elseif not isEcho and (command == "skip" or command == "done") then
+                        elseif not isEcho and (command == "skip"
+                            or (command == "done" and (not (ui and ui.requireSignal) or ui.allowDone))) then
                             if #foundDevices > 0 then
                                 adding = false
                                 chatHighlight("Finished device type: " .. ChatUtil.device(label))
@@ -339,7 +434,7 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                             scanning = false
                         end
                     end
-                elseif event == "monitor_touch" and ui and rawEvent[2] == ui.monSide then
+                elseif event == "monitor_touch" and ui and ui.mon and rawEvent[2] == ui.monSide then
                     if MonitorUtil.getPressedButton({backBtn}, rawEvent[3], rawEvent[4]) then
                         cancelled = true
                         scanning = false
@@ -349,60 +444,132 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
 
             if matchedCandidates then
                 local selected = nil
-                local timedOut = false
-                if #matchedCandidates == 1 then
+                if #matchedCandidates == 1 and not (ui and ui.confirmSingle) then
                     selected = matchedCandidates[1]
                 else
-                    table.sort(matchedCandidates)
-                    local choices = {}
-                    for index, name in ipairs(matchedCandidates) do
-                        choices[#choices + 1] = tostring(index) .. ". " .. name
+                    if promptSent then
+                        PocketBridge.clearPrompt()
+                        promptSent = false
                     end
-                    chatQuestion("Choose " .. label .. ": " .. table.concat(choices, " | "))
-                    local answer
-                    if ui then
-                        answer = waitAnyMessageMonitor(ui.mon, ui.monSide, 60)
-                    else
-                        answer = ChatUtil.waitForAnyMessage(60)
-                    end
-                    if answer == "cancel" then
-                        cancelled = true
-                    elseif not answer then
-                        timedOut = true
-                    else
-                        local number = tonumber(answer)
-                        if number and number % 1 == 0 then
-                            selected = matchedCandidates[number]
+                    while not selected and not cancelled and not stepAborted do
+                        if #matchedCandidates == 1 and ui and ui.confirmSingle then
+                            local candidate = matchedCandidates[1]
+                            local owner = ui.assignmentOwners and ui.assignmentOwners[candidate]
+                            local question = owner
+                                and ("Swap " .. candidate .. " from " .. owner .. " with "
+                                    .. tostring(ui.oldValue) .. " for " .. label .. "? (Y/N)")
+                                or ("Use " .. candidate .. " for " .. label .. "? (Y/N)")
+                            chatQuestion(question)
+                            local confirmation
+                            if ui.mon then
+                                confirmation = waitAnyMessageMonitor(ui.mon, ui.monSide, 60)
+                            else
+                                confirmation = ChatUtil.waitForAnyMessage(60)
+                            end
+                            local choice = confirmation and confirmation:lower() or nil
+                            if choice == "y" or choice == "yes" then
+                                selected = candidate
+                            elseif choice == "cancel" then
+                                cancelled = true
+                            elseif choice == nil then
+                                stepAborted = true
+                            elseif choice == "n" or choice == "no" then
+                                rejected[candidate] = true
+                                matchedCandidates = nil
+                                retryScan = true
+                                break
+                            else
+                                chatError("Answer Y or N.")
+                            end
                         else
-                            for _, name in ipairs(matchedCandidates) do
-                                if name:lower() == answer:lower() then selected = name break end
+                        if not PocketBridge.promptChoices(label, matchedCandidates) then
+                            local choices = {}
+                            for index, name in ipairs(matchedCandidates) do
+                                choices[#choices + 1] = tostring(index) .. ". " .. name
+                            end
+                            chatQuestion("Choose " .. label .. ": " .. table.concat(choices, " | "))
+                        end
+                        local answer
+                        if ui and ui.mon then
+                            answer = waitAnyMessageMonitor(ui.mon, ui.monSide, 60)
+                        else
+                            answer = ChatUtil.waitForAnyMessage(60)
+                        end
+                        if answer == "cancel" then
+                            cancelled = true
+                        elseif not answer then
+                            stepAborted = true
+                        else
+                            local number = tonumber(answer)
+                            local candidate = number and number % 1 == 0 and matchedCandidates[number] or nil
+                            if not candidate then
+                                for _, name in ipairs(matchedCandidates) do
+                                    if name:lower() == answer:lower() then candidate = name break end
+                                end
+                            end
+                            if not candidate or not canSelect(candidate) or not deviceMatches(candidate, deviceType) then
+                                PocketBridge.showScanResult(false, label)
+                                chatError("Select a listed, connected " .. label .. ".")
+                            else
+                                local owner = ui and ui.assignmentOwners and ui.assignmentOwners[candidate]
+                                if ui and ui.autoAcceptChoice and not owner then
+                                    selected = candidate
+                                else
+                                    local question = owner
+                                        and ("Swap " .. candidate .. " from " .. owner .. " with "
+                                            .. tostring(ui.oldValue) .. " for " .. label .. "? (Y/N)")
+                                        or ("Use " .. candidate .. " for " .. label .. "? (Y/N)")
+                                    chatQuestion(question)
+                                    local confirmation
+                                    if ui and ui.mon then
+                                        confirmation = waitAnyMessageMonitor(ui.mon, ui.monSide, 60)
+                                    else
+                                        confirmation = ChatUtil.waitForAnyMessage(60)
+                                    end
+                                    local choice = confirmation and confirmation:lower() or nil
+                                    if choice == "y" or choice == "yes" then
+                                        selected = candidate
+                                    elseif choice == "cancel" then
+                                        cancelled = true
+                                    elseif choice == nil then
+                                        stepAborted = true
+                                    elseif choice == "n" or choice == "no" then
+                                        chatInfo("Choose another device from the list.")
+                                    else
+                                        chatError("Answer Y or N.")
+                                    end
+                                end
                             end
                         end
-                    end
-                    if not selected and not cancelled then
-                        if not timedOut then
-                            chatError("No matching device confirmed. Process will end.")
                         end
-                        stepAborted = true
                     end
                 end
 
                 if selected then
                     detectedName = selected
                     deviceFound = true
+                elseif not cancelled and not retryScan and not stepAborted then
+                    PocketBridge.showScanResult(false, label)
                 end
+            end
+
+            if promptSent and (deviceFound or matchedCandidates or cancelled or skipRequestedThisType or stepAborted) then
+                PocketBridge.clearPrompt()
+                promptSent = false
             end
 
             if stepAborted then
                 break
             end
 
-            if not deviceFound and adding and not skipRequestedThisType and not cancelled then
+            if not retryScan and not deviceFound and adding
+                and not skipRequestedThisType and not cancelled then
+                    PocketBridge.showScanResult(false, label)
                     chatError("Timeout! Device [" .. ChatUtil.device(label, ChatUtil.code("c")) .. "] not detected.")
                     chatInfo("Check connection and try again, or type 'skip'.")
 
                 local skipNow
-                if ui then
+                if ui and ui.mon then
                     skipNow = waitAnyMessageMonitor(ui.mon, ui.monSide, 10)
                 else
                     skipNow = ChatUtil.waitForAnyMessage(10)
@@ -414,6 +581,8 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
                     skipRequestedThisType = true
                 end
             end
+
+            if promptSent then PocketBridge.clearPrompt() end
 
             if skipRequestedThisType then
                 break
@@ -436,26 +605,36 @@ function ConfigWizard.scanDeviceType(deviceType, globalAllDevices, ui)
             end
 
             if alreadyAdded then
+                PocketBridge.showScanResult(false, label)
                 chatError("Device " .. ChatUtil.device(name, ChatUtil.code("c")) .. " already added to this section!")
                 chatInfo("Connect a different device.")
                 deviceFound = false
             else
-                chatSeparator()
-                chatSuccess("Device detected: " .. ChatUtil.device(name))
-                chatInfo("Found device matches type [" .. ChatUtil.device(label) .. "]")
-
                 table.insert(foundDevices, name)
-                chatSuccess("Added: " .. ChatUtil.device(name) .. " -> " .. ChatUtil.device(label))
+                PocketBridge.showScanResult(true, label .. ": " .. name)
+                chatSuccess("Added " .. label .. ": " .. ChatUtil.device(name))
                 if #foundDevices >= maxCount then
                     adding = false
+                elseif maxCount > 1 then
+                    chatQuestion("Add another " .. label .. "? (Y/N)")
+                    local addMore
+                    if ui and ui.mon then
+                        addMore = ConfigWizard.waitYesNoMonitor(ui.mon, ui.monSide, 60)
+                    else
+                        local answer = ChatUtil.waitForAnyMessage(60)
+                        addMore = answer and (answer:lower() == "y" or answer:lower() == "yes")
+                    end
+                    if addMore ~= true then adding = false end
                 end
             end
         end
     end
 
     if cancelled then
+        PocketBridge.endScan()
         return {}, true
     end
+    PocketBridge.endScan()
     return foundDevices, false
 end
 
@@ -580,7 +759,7 @@ end
 ---   paired PocketOS reply — return "chat", message text
 --- @param timeout number|nil seconds before auto-return "timeout" (default 30)
 function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, timeout)
-    timeout = timeout or 30
+    timeout = timeout or 120
     local w, h = mon.getSize()
     local area = HudUtil.getArea(mon)
     local listX, listY, listW, listBg = area.x, area.y, area.w, area.bgColor
@@ -634,11 +813,6 @@ function ConfigWizard.editPageLoop(mon, monSide, title, items, linesPerPage, tim
             end
         end
         table.insert(itemLines, lines)
-    end
-
-    -- Drain accumulated chat_box echo events before waiting.
-    if ChatUtil.drainQueue then
-        ChatUtil.drainQueue()
     end
 
     local totalLines = 0
@@ -988,23 +1162,13 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     MonitorUtil.drawText(mon, listX, listY, "Follow instructions on PocketOS.", MonitorUtil.COLORS.highlight, listBg)
     MonitorUtil.drawText(mon, listX, listY + 1, "Answer using the pocket terminal.", MonitorUtil.COLORS.text, listBg)
 
-    chatSeparator()
-    chatHighlight("=== Editing " .. configLabel .. " ===")
-    chatInfo("Follow PocketOS instructions. Answer on the pocket terminal.")
-    chatSeparator()
-    chatInfo("HOW IT WORKS:")
-    chatInfo("Scenario 1: Connect a NEW device (it appears in peripheral list)")
-    chatInfo("Scenario 2: Disconnect and RECONNECT an already known device")
-    chatInfo("Work with ONE device at a time. Multiple changes may confuse the scanner.")
-    chatSeparator()
+    chatInfo("Edit " .. configLabel .. ": choose a device type, then follow the pocket prompt.")
     os.sleep(1)
 
     local updatedConfig = {}
     for k, v in pairs(existingConfig) do
         updatedConfig[k] = v
     end
-
-    local fullListShown = false
 
     local editing = true
     while editing do
@@ -1013,7 +1177,7 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
         local idx = 0
         for _, dt in ipairs(deviceTypes) do
             idx = idx + 1
-            local val = existingConfig[dt.key]
+            local val = updatedConfig[dt.key]
             table.insert(currentItems, {
                 key = dt.label,
                 value = val,
@@ -1021,25 +1185,15 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
             })
         end
 
-        -- Prompt in chat BEFORE drawing page
-        if not fullListShown then
-            chatSeparator()
-            chatHighlight("=== Current " .. configLabel .. " Config ===")
-            for _, dt in ipairs(deviceTypes) do
-                local val = existingConfig[dt.key]
-                local display = type(val) == "table" and table.concat(val, ", ") or tostring(val)
-                if display == "" then
-                    display = ChatUtil.code("8") .. "<none>"
-                else
-                    display = ChatUtil.device(display)
-                end
-                chatInfo("  [" .. ChatUtil.device(dt.key) .. "] " .. ChatUtil.device(dt.label) .. " -> " .. display)
-            end
-            fullListShown = true
+        local editChoices = {}
+        for _, dt in ipairs(deviceTypes) do
+            editChoices[#editChoices + 1] = dt.label
         end
-
-        chatSeparator()
-        chatQuestion("Enter device key to edit (e.g. 'tech_monitor'), or 'done' to finish:")
+        editChoices[#editChoices + 1] = "Finish editing"
+        if not PocketBridge.promptChoices("Choose device to edit", editChoices) then
+            chatQuestion("Choose a device by number or name; " .. tostring(#editChoices)
+                .. " finishes editing.")
+        end
 
         local pageResult, capturedMsg = ConfigWizard.editPageLoop(mon, monSide, "=== " .. configLabel .. " Current ===", currentItems)
 
@@ -1052,23 +1206,10 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
             return nil
         end
 
-        local chosenKey = capturedMsg or ""
+        local chosenKey = resolveEditChoice(capturedMsg, deviceTypes)
 
-        local validKeys = {"done"}
-        for _, dt in ipairs(deviceTypes) do
-            table.insert(validKeys, dt.key)
-        end
-
-        local isValid = false
-        for _, vk in ipairs(validKeys) do
-            if vk == chosenKey then
-                isValid = true
-                break
-            end
-        end
-
-        if not isValid then
-            chatError("Invalid key: '" .. ChatUtil.device(chosenKey, ChatUtil.code("c")) .. "'. Valid keys: " .. deviceList(validKeys, ", "))
+        if not chosenKey then
+            chatError("Choose a listed number or a unique device name.")
             os.sleep(1)
         else
             if chosenKey == "done" then
@@ -1089,12 +1230,59 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
                 os.sleep(1)
             else
                 chatSuccess("Editing section: " .. ChatUtil.device(chosenType.label))
-                local found = ConfigWizard.scanDeviceType(chosenType, globalAllDevices)
+                local allowExisting = {}
+                local oldValue = updatedConfig[chosenType.key]
+                local swapOwners = {}
+                local assignmentOwners = {}
+                if type(oldValue) == "string" then
+                    allowExisting[oldValue] = true
+                elseif type(oldValue) == "table" then
+                    for _, name in ipairs(oldValue) do allowExisting[name] = true end
+                end
+                if chosenType.max == 1 and type(oldValue) == "string" and oldValue ~= "" then
+                    for _, otherType in ipairs(deviceTypes) do
+                        local otherValue = updatedConfig[otherType.key]
+                        if otherType.key ~= chosenType.key and otherType.max == 1
+                            and type(otherValue) == "string" and otherValue ~= ""
+                            and deviceMatches(oldValue, otherType)
+                            and deviceMatches(otherValue, chosenType) then
+                            allowExisting[otherValue] = true
+                            swapOwners[otherValue] = otherType.key
+                            assignmentOwners[otherValue] = otherType.label
+                        end
+                    end
+                end
+                local found = ConfigWizard.scanDeviceType(chosenType, globalAllDevices, {
+                    allowExisting = allowExisting,
+                    assignmentOwners = assignmentOwners,
+                    oldValue = oldValue,
+                    confirmSingle = true,
+                    mon = mon, monSide = monSide,
+                })
                 if #found > 0 then
                     if chosenType.max == 1 then
+                        local swapKey = swapOwners[found[1]]
+                        if swapKey then
+                            updatedConfig[swapKey] = oldValue
+                            chatSuccess("Swapped " .. chosenType.label .. " with "
+                                .. assignmentOwners[found[1]] .. ".")
+                        end
                         updatedConfig[chosenType.key] = found[1]
                     else
                         updatedConfig[chosenType.key] = found
+                    end
+                    for index = #globalAllDevices, 1, -1 do
+                        globalAllDevices[index] = nil
+                    end
+                    for _, dt in ipairs(deviceTypes) do
+                        local value = updatedConfig[dt.key]
+                        if type(value) == "string" and value ~= "" then
+                            globalAllDevices[#globalAllDevices + 1] = value
+                        elseif type(value) == "table" then
+                            for _, name in ipairs(value) do
+                                globalAllDevices[#globalAllDevices + 1] = name
+                            end
+                        end
                     end
                     chatSuccess("Section updated: " .. ChatUtil.device(chosenType.label))
                 else
@@ -1132,6 +1320,11 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
     end
 
     -- === FINAL CONFIRMATION ===
+    local missing = getMissingRequired(deviceTypes, updatedConfig)
+    if #missing > 0 then
+        chatError("Config incomplete. Missing: " .. table.concat(missing, ", "))
+        return nil
+    end
     local summaryItems = {}
     local sidx = 1
     for _, dt in ipairs(deviceTypes) do
@@ -1165,16 +1358,14 @@ function ConfigWizard.editByKeys(deviceTypes, mon, monSide, configLabel, existin
 
     -- SAVE
     chatSeparator()
-    chatSuccess(configLabel .. " configuration updated!")
     MonitorUtil.clearScreen(mon)
     HudUtil.drawBackground(mon, "create_edit")
     HudUtil.createEditTitle(mon, "=== Saving " .. configLabel .. " ===")
     MonitorUtil.drawText(mon, listX, listY, "Configuration updated!", MonitorUtil.COLORS.success, listBg)
 
-    if onSave then
-        onSave(updatedConfig)
-    end
-
+    local saved = not onSave or onSave(updatedConfig)
+    if saved == false then return updatedConfig, false end
+    chatSuccess(configLabel .. " configuration updated!")
     return updatedConfig
 end
 
@@ -1200,11 +1391,7 @@ function ConfigWizard.createByTypes(deviceTypes, mon, monSide, configLabel, onSa
         "Press Back on the monitor to cancel.",
     })
 
-    chatSeparator()
-    chatHighlight("=== Creating " .. configLabel .. " ===")
-    chatWarning("Creating a NEW config. Current one will be overwritten.")
-    chatInfo("Connect devices one by one as prompted. Type 'skip' to skip a step.")
-    chatSeparator()
+    chatWarning("Creating " .. configLabel .. "; current config will be replaced after final confirmation.")
     os.sleep(1)
 
     local globalAllDevices = {}
@@ -1212,12 +1399,13 @@ function ConfigWizard.createByTypes(deviceTypes, mon, monSide, configLabel, onSa
     local total = #deviceTypes
 
     for i, dt in ipairs(deviceTypes) do
-        chatHighlight("Step " .. i .. "/" .. total .. ": " .. dt.label)
         ConfigWizard.drawCreateStep(mon, "=== Create " .. configLabel .. " ===", {
             "Step " .. i .. "/" .. total .. ": " .. dt.label,
             "Connect device. Press Back to cancel.",
         })
-        local found, cancelled = ConfigWizard.scanDeviceType(dt, globalAllDevices, { mon = mon, monSide = monSide })
+        local found, cancelled = ConfigWizard.scanDeviceType(dt, globalAllDevices, {
+            mon = mon, monSide = monSide, step = i, total = total,
+        })
         if cancelled then
             return nil
         end
@@ -1232,12 +1420,14 @@ function ConfigWizard.createByTypes(deviceTypes, mon, monSide, configLabel, onSa
         end
     end
 
-    local collectedCount = 0
-    for _ in pairs(collected) do
-        collectedCount = collectedCount + 1
-    end
-    if collectedCount == 0 then
-        chatError("No devices collected. Nothing saved.")
+    local missing = getMissingRequired(deviceTypes, collected)
+    if #missing > 0 then
+        chatError("Config incomplete. Missing: " .. table.concat(missing, ", "))
+        ConfigWizard.drawCreateStep(mon, "=== Incomplete " .. configLabel .. " ===", {
+            "Required devices are missing.",
+            "Open View after adding them.",
+            "Nothing was saved or sent.",
+        })
         return nil
     end
 
@@ -1272,16 +1462,14 @@ function ConfigWizard.createByTypes(deviceTypes, mon, monSide, configLabel, onSa
     end
 
     chatSeparator()
-    chatSuccess(configLabel .. " configuration created!")
     MonitorUtil.clearScreen(mon)
     HudUtil.drawBackground(mon, "create_edit")
     HudUtil.createEditTitle(mon, "=== Saving " .. configLabel .. " ===")
     MonitorUtil.drawText(mon, listX, listY, "Configuration created!", MonitorUtil.COLORS.success, listBg)
 
-    if onSave then
-        onSave(collected)
-    end
-
+    local saved = not onSave or onSave(collected)
+    if saved == false then return collected, false end
+    chatSuccess(configLabel .. " configuration created!")
     return collected
 end
 

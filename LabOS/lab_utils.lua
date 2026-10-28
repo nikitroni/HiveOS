@@ -16,6 +16,26 @@ local ELITE_VALUES = {
 
 local GENE_ATTRIBUTES = { "productivity", "endurance", "behavior", "weather_tolerance" }
 
+function Utils.getCageBeeIdentity(item)
+    local components = item and item.components
+    local custom = components and components["minecraft:custom_data"]
+    if type(custom) ~= "table" then return nil, nil end
+
+    local beeType = nil
+    if type(custom.entity) == "string" and custom.entity ~= ""
+        and custom.entity ~= "productivebees:configurable_bee" then
+        beeType = custom.entity
+    elseif type(custom.type) == "string" and custom.type ~= "" then
+        beeType = custom.type
+    end
+
+    local beeName = type(custom.name) == "string" and custom.name ~= "" and custom.name or nil
+    if not beeName and type(item.displayName) == "string" then
+        beeName = item.displayName:match("%((.-)%)$")
+    end
+    return beeType, beeName
+end
+
 -- ==================== READING BEES FROM THE BARREL ====================
 function Utils.getBeesFromBarrel()
     --- @type table
@@ -36,10 +56,12 @@ function Utils.getBeesFromBarrel()
                     if attachments then
                         local attrHandler = attachments["productivebees:attributes_handler"]
                         if attrHandler then
+                            local beeType, beeName = Utils.getCageBeeIdentity(item)
                             for i = 1, item.count do   -- each cage in the stack
                                 table.insert(bees, {
                                     slot = item.Slot + 1,
-                                    type = custom.type,
+                                    type = beeType,
+                                    name = beeName,
                                     productivity = attrHandler.bee_productivity,
                                     endurance = attrHandler.bee_endurance,
                                     behavior = attrHandler.bee_behavior,

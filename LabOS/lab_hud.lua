@@ -129,7 +129,7 @@ function HUD.drawBeeCards(mon, bees)
         mon.setBackgroundColor(colors.gray)
         mon.setCursorPos(baseX + off.title.x, baseY + off.title.y)
         if bee then
-            local beeName = lib.formatBeeName(bee.type) or "Unknown"
+            local beeName = bee.name or lib.formatBeeName(bee.type)
             if #beeName > 10 then beeName = beeName:sub(1,10) end
             mon.setTextColor(colors.white)
             mon.write(string.format("%s#%d", beeName, i))
@@ -239,33 +239,30 @@ function HUD.drawAll(bees, geneCounts, neededCounts, mode, logLines, frame, stat
     win.clear()
 
     local oldTerm = term.redirect(win)
+    local drawn, drawError = pcall(function()
+        -- Draw the background into the buffer
+        if background then
+            paintutils.drawImage(background, 1, 1, win)
+        else
+            win.setBackgroundColor(colors.black)
+            win.clear()
+        end
 
-    -- Draw the background into the buffer
-    if background then
-        paintutils.drawImage(background, 1, 1, win)
-    else
-        win.setBackgroundColor(colors.black)
-        win.clear()
-    end
+        HUD.drawDNA(win, frame)
+        HUD.drawGeneIndexer(win, geneCounts)
+        HUD.drawBeeGenetics(win, neededCounts)
+        HUD.drawBeeCards(win, bees)
+        HUD.drawLogArea(win, mode, logLines, frame)
 
-    -- DNA (animation)
-    HUD.drawDNA(win, frame)
-
-    -- Dynamic elements
-    HUD.drawGeneIndexer(win, geneCounts)
-    HUD.drawBeeGenetics(win, neededCounts)
-    HUD.drawBeeCards(win, bees)
-    HUD.drawLogArea(win, mode, logLines, frame)
-
-    -- Status indicator (BUSY - terminal is busy with a task)
-    if status then
-        win.setCursorPos(1, 1)
-        win.setTextColor(status == "busy" and colors.red or colors.green)
-        win.setBackgroundColor(colors.black)
-        win.write(status == "busy" and "BUSY" or "free")
-    end
-
+        if status then
+            win.setCursorPos(1, 1)
+            win.setTextColor(status == "busy" and colors.red or colors.green)
+            win.setBackgroundColor(colors.black)
+            win.write(status == "busy" and "BUSY" or "free")
+        end
+    end)
     term.redirect(oldTerm)
+    if not drawn then error(drawError, 0) end
 
     -- Atomic output of the whole frame
     win.setVisible(true)
