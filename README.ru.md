@@ -4,7 +4,7 @@
 wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua
 ```
 
-Одна команда. Установщик спросит роль (BeeOS / LabOS / HeartOS / PocketOS) и ветку (`main` или `upgrade`; Enter выбирает `main`). Ветку `upgrade` можно выбрать после её публикации.
+Одна команда. Установщик спросит роль (BeeOS / LabOS / HeartOS / PocketOS) и скачает её из `main`.
 
 ![](docs/logo.png)
 
@@ -75,7 +75,7 @@ flowchart LR
 1. Создай и поставь **три компьютера** с мониторами: для HeartOS, BeeOS и LabOS.
 2. Подключи **Wired Modem + Networking Cable** к каждому стационарному терминалу. Добавь беспроводной или эндер-модем к HeartOS и модем-улучшение к карманному компьютеру.
 3. На каждом компьютере выполни `wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua`.
-4. Выбери **роль** (BeeOS / LabOS / HeartOS / PocketOS) и ветку. На всех четырёх компьютерах используй одну ветку. По умолчанию установщик выбирает `main`; для проверки опубликованной ветки выбери `upgrade`.
+4. Выбери **роль** (BeeOS / LabOS / HeartOS / PocketOS). Установщик скачает текущую версию `main` на каждый компьютер.
 5. Перезагрузи BeeOS, LabOS и HeartOS. Запусти PocketOS, введи код привязки с монитора HeartOS и следуй инструкциям мастера. Устройства сканирует HeartOS, а управление и ответы находятся на PocketOS.
 
 Пошаговая инструкция с подключением кабелей и мониторов — в [Инструкции по установке](docs/setup.ru.md).

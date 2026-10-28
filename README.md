@@ -4,7 +4,7 @@
 wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua
 ```
 
-One command. The installer asks for a role (BeeOS / LabOS / HeartOS / PocketOS) and a branch (`main` or `upgrade`; Enter selects `main`). Choose `upgrade` only after that branch has been published.
+One command. The installer asks for a role (BeeOS / LabOS / HeartOS / PocketOS) and downloads it from `main`.
 
 ![](docs/logo.png)
 
@@ -75,7 +75,7 @@ The three fixed terminals need **Wired Modems + Networking Cable** (advanced com
 1. Craft and place **three computers** with their monitors: one for HeartOS, one for BeeOS, one for LabOS.
 2. Connect a **Wired Modem + Networking Cable** to each fixed terminal. Add a wireless or Ender Modem to HeartOS and equip the pocket computer with a matching wireless or Ender Modem.
 3. On each computer run `wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua`.
-4. Pick a **role** (BeeOS / LabOS / HeartOS / PocketOS) and branch. Use the same branch on all four computers. The installer offers `main` by default; choose `upgrade` when testing a published upgrade branch.
+4. Pick a **role** (BeeOS / LabOS / HeartOS / PocketOS). The installer downloads the current `main` revision for each computer.
 5. Reboot BeeOS, LabOS, and HeartOS. Start PocketOS and enter the pairing code sent to the owner's private chat. Start configuration on the HeartOS monitor; HeartOS scans devices, and PocketOS shows prompts and accepts answers.
 
 Full step-by-step instructions, including cable and monitor placement, are in [Setup Guide](docs/setup.md).

@@ -6,6 +6,7 @@ local repoOwner = "nikitroni"
 local repoName = "HiveOS"
 local userAgent = "CC-Tweaked-Installer"
 local roles = { "BeeOS", "LabOS", "HeartOS", "PocketOS" }
+local branch = "main"
 
 local function httpGet(url)
   local ok, response, reason = pcall(http.get, {
@@ -30,14 +31,6 @@ local function chooseRole()
   local n = tonumber(read())
   if not n or not roles[n] then return nil end
   return roles[n]
-end
-
-local function chooseBranch()
-  write("Branch [main/upgrade] (Enter = main): ")
-  local branch = read():lower():match("^%s*(.-)%s*$")
-  if branch == "" then branch = "main" end
-  if branch ~= "main" and branch ~= "upgrade" then return nil end
-  return branch
 end
 
 local function fetchTree(branch)
@@ -123,10 +116,5 @@ local role = chooseRole()
 if not role then
   print("Invalid choice.")
 else
-  local branch = chooseBranch()
-  if not branch then
-    print("Invalid branch. Choose main or upgrade.")
-  else
-    downloadRole(role, branch)
-  end
+  downloadRole(role, branch)
 end

@@ -1,7 +1,7 @@
 local originalLoadfile = loadfile
 
 local function runInstall(failSecond)
-  local inputs = { "4", "upgrade" }
+  local inputs = { "4" }
   local urls = {}
   local writes = {}
   local output = {}
@@ -14,7 +14,7 @@ local function runInstall(failSecond)
         local url = request.url
         urls[#urls + 1] = url
         local body
-        if url:find("/commits/upgrade", 1, true) then
+        if url:find("/commits/main", 1, true) then
           body = "commit"
         elseif url:find("/git/trees/bbbb", 1, true) then
           body = "tree"
@@ -62,7 +62,7 @@ local function runInstall(failSecond)
 end
 
 local urls, writes, output = runInstall(false)
-assert(urls[1]:find("/commits/upgrade", 1, true), "Upgrade branch not selected")
+assert(urls[1]:find("/commits/main", 1, true), "Main branch not selected")
 assert(urls[2]:find("/git/trees/bbbb", 1, true), "Tree SHA not used for API lookup")
 assert(urls[3]:find("/aaaa/PocketOS/startup.lua", 1, true), "Files not pinned to commit")
 assert(writes["startup.lua"] == "startup bytes")
