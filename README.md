@@ -29,9 +29,9 @@ Every terminal communicates over rednet with a small request/reply protocol, so 
 
 HiveOS is intentionally split into three roles. **HeartOS** is the control center: it owns the device registry (`device_types.lua`), validates and stores the config files, and talks to the other terminals. **BeeOS** owns the hive screens and the async reader that inspects every hive. **LabOS** owns the breeding and genetics pipeline plus four button monitors.
 
-**PocketOS** runs on an Advanced Wireless Pocket Computer. It joins HeartOS over rednet, displays setup instructions, and sends wizard answers. HeartOS still scans nearby peripherals and saves the configurations. Pair the pocket computer with the code shown on the HeartOS monitor before using the wizard.
+**PocketOS** runs on an Advanced Wireless Pocket Computer. It joins HeartOS over rednet, displays setup instructions, and sends wizard answers. HeartOS still scans nearby peripherals and saves the configurations. The pairing code is sent to the configured owner's private chat; it is not shown on the HeartOS monitor.
 
-After pairing, choose `1–6` on PocketOS to create or edit BeeOS, LabOS, or the hive map. The pocket screen shows instructions and accepts replies. An unambiguous device is added automatically, and the completed configuration is confirmed once before saving. Notifications appear on PocketOS while it is online and fall back to the owner's private chat when it is offline. To pair a different pocket computer, stop HeartOS and run `heart_main --pair`.
+After pairing, start BeeOS, LabOS, or hive-map creation/editing on the HeartOS monitor. PocketOS shows the instructions and accepts replies; it does not start the wizard. An unambiguous device is added automatically, and the completed configuration is confirmed once before saving. Notifications appear on PocketOS while it is online and fall back to the owner's private chat when it is offline. To pair a different pocket computer, open the PocketOS status panel on HeartOS and confirm replacement. HeartOS sends the new code privately before revoking the old pairing.
 
 Configuration changes follow the same pattern for BeeOS and LabOS. HeartOS first asks the terminal whether it is free (`busy?` / `status`); if the terminal is busy running a job it answers `wait` and the edit is refused. Otherwise HeartOS sends `freeze`, the terminal shows its wait screen, HeartOS pushes `update_config`, and finally sends `unfreeze`. Each step expects an explicit acknowledgement (`frozen`, `config_updated`, `running`).
 
@@ -76,7 +76,7 @@ The three fixed terminals need **Wired Modems + Networking Cable** (advanced com
 2. Connect a **Wired Modem + Networking Cable** to each fixed terminal. Add a wireless or Ender Modem to HeartOS and equip the pocket computer with a matching wireless or Ender Modem.
 3. On each computer run `wget run https://raw.githubusercontent.com/nikitroni/HiveOS/main/installer.lua`.
 4. Pick a **role** (BeeOS / LabOS / HeartOS / PocketOS) and branch. Use the same branch on all four computers. The installer offers `main` by default; choose `upgrade` when testing a published upgrade branch.
-5. Reboot BeeOS, LabOS, and HeartOS. Start PocketOS, enter the pairing code shown on the HeartOS monitor, then follow its setup prompts. HeartOS scans devices; PocketOS provides the controls and answers.
+5. Reboot BeeOS, LabOS, and HeartOS. Start PocketOS and enter the pairing code sent to the owner's private chat. Start configuration on the HeartOS monitor; HeartOS scans devices, and PocketOS shows prompts and accepts answers.
 
 Full step-by-step instructions, including cable and monitor placement, are in [Setup Guide](docs/setup.md).
 

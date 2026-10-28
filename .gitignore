@@ -2,6 +2,7 @@
 *.log
 *.bak
 .vscode/
+**/.settings
 saves/
 **/logs/
 _logs/
@@ -9,6 +10,8 @@ _paint/
 _test/
 _test.lua
 backups/
+AGENTS.md
+plans/
 
 # Sources (mirrored to BeeOS/LabOS/HeartOS by deploy.bat)
 0/
